@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pocket Reads QB Trainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout: one stage (the field) on top, read-out and film room below. Single night-game theme by choice. */
+  --turf:#1f6b3a; --night:#0e1512; --panel:#17211c; --line:#2c3a33;
+  --chalk:#f1f4ee; --dim:#9fb0a6; --gold:#f5c542; --bad:#ff6b5e; --good:#59d98e;
+  --display:"Saira Condensed","Arial Narrow",sans-serif; --body:"Barlow",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--night);color:var(--chalk);font-family:var(--body);font-size:16px;line-height:1.45}
+main{max-width:1100px;margin:0 auto;padding:14px 16px 40px;display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:baseline;justify-content:space-between}
+h1{font-family:var(--display);font-weight:800;font-size:1.9rem;letter-spacing:.02em;text-transform:uppercase;margin:0}
+h2{font-family:var(--display);font-weight:600;font-size:1.25rem;text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px}
+.tabs{display:flex;gap:6px}
+button{font:600 .95rem var(--body);color:var(--chalk);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer}
+button:hover{border-color:var(--dim)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+button.on{background:var(--chalk);color:var(--night);border-color:var(--chalk)}
+button.go{background:var(--gold);color:#201a00;border-color:var(--gold);font-size:1.05rem;padding:11px 22px}
+#stageWrap{position:relative;background:#000;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+#stage{display:block;width:100%;height:auto;touch-action:manipulation;cursor:crosshair}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.stats{margin-left:auto;font-family:var(--display);font-size:1.15rem;letter-spacing:.04em;color:var(--dim);font-variant-numeric:tabular-nums}
+.stats b{color:var(--chalk)}
+#readout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media(max-width:720px){#readout{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.grade{font-family:var(--display);font-weight:800;font-size:3.2rem;line-height:1}
+.card p{margin:6px 0}
+.dimtxt{color:var(--dim);font-size:.92rem}
+#board{width:100%;height:auto;display:block;border-radius:6px;background:#174d2b}
+#filmStage{position:relative;background:#000;border-radius:10px;overflow:hidden;border:1px solid var(--line);min-height:180px}
+#clip{display:block;width:100%;max-height:70vh}
+#mask{position:absolute;left:42%;top:55%;width:16%;height:30%;background:#000;border:2px dashed var(--gold);border-radius:6px;cursor:grab;touch-action:none}
+#mark{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border:3px solid var(--gold);border-radius:50%;pointer-events:none}
+input[type=range]{accent-color:var(--gold)}
+kbd{font:600 .8rem var(--body);background:#0a100d;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+#link{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+#qr{background:#fff;padding:8px;border-radius:8px;line-height:0}
+#ctl{min-height:100%;padding:22px 18px;display:flex;flex-direction:column;gap:16px;max-width:520px;margin:0 auto}
+#ctl button{font-size:1.25rem;padding:20px}
+#cStatus{font-family:var(--display);font-size:2rem;line-height:1.1;text-transform:uppercase}
+#cMeter{height:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+#cMeter i{display:block;height:100%;width:0;background:var(--gold)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Pocket Reads</h1>
+  <div class="tabs">
+    <button id="tabSim" class="on">Sim plays</button>
+    <button id="tabTrain">Throw training</button>
+    <button id="tabFilm">Your film</button>
+    <button id="fsBtn">Full screen</button>
+  </div>
+</header>
+
+<section id="sim">
+  <div id="stageWrap"><canvas id="stage" width="1280" height="720" aria-label="Quarterback view of the field"></canvas></div>
+  <div class="row" style="margin-top:10px">
+    <button id="snapBtn" class="go">Snap</button>
+    <span class="stats">PLAYS <b id="sPlays">0</b> &nbsp; AVG <b id="sAvg">0</b> &nbsp; STREAK <b id="sStreak">0</b></span>
+  </div>
+  <div class="card" id="trainBar" hidden style="margin:10px 0"><h2>Throw training</h2><p id="trainMsg" style="font-weight:600;margin:0">Throw to the receiver marked in green.</p><p class="dimtxt" style="margin:6px 0 0">No defense here. Snap, then pump at the green receiver, leading him if he is moving. Every throw is saved with who you meant to hit, and the aim model re-fits itself to your motion as you go. Do as many as you like, then use Copy throw data.</p></div>
+  <p class="dimtxt" id="simHelp">Routes are drawn before the snap and disappear when the ball is snapped. Read the safeties, then throw by tapping a receiver on the field. <kbd>Space</kbd> snaps and loads the next play. You are graded on who you picked and when the ball came out.</p>
+  <div class="card" id="linkCard" hidden>
+    <h2>Phone as the football</h2>
+    <div id="link">
+      <button id="linkBtn">Connect a phone</button>
+      <div id="qr" hidden></div>
+      <button id="copyBtn" hidden>Copy throw data</button><button id="clearBtn" hidden>Clear saved data</button>
+      <div><div id="linkMsg" style="font-weight:600"></div><div class="dimtxt" id="linkHelp">Put this screen on the TV, then scan the code with the phone you will hold. Hold it like a football: the bottom of the phone is the nose. A 30 second setup has you pump at five targets so the game learns your throwing motion.</div></div>
+    </div>
+    <textarea id="copyBox" hidden rows="4" style="width:100%;margin-top:10px" aria-label="Throw data"></textarea>
+  </div>
+  <div id="readout" hidden>
+    <div class="card">
+      <div class="row"><span class="grade" id="gLetter">A</span><div><div id="gHead" style="font-weight:600"></div><div class="dimtxt" id="gCov"></div></div></div>
+      <p id="gYou"></p><p id="gBest"></p><p id="gTime"></p><p class="dimtxt" id="gNote"></p>
+    </div>
+    <div class="card"><h2>Play at your release</h2><canvas id="board" width="640" height="420"></canvas>
+      <p class="dimtxt">Jersey numbers are your receivers, red marks are defenders, the gold ring is the best read.</p></div>
+  </div>
+</section>
+
+<section id="film" hidden>
+  <div class="card">
+    <h2>Train on your own film</h2>
+    <p class="dimtxt">Load a clip you have the right to use, like your own game film. End zone or behind-the-QB angles work best. Drag the black box over the quarterback, play the clip, and tap the spot you would throw to at the moment you would let it go. Then reveal the real play and compare.</p>
+    <div class="row">
+      <input type="file" id="clipFile" accept="video/*">
+      <button id="filmPlay">Play from start</button>
+      <button id="filmReveal" disabled>Reveal the real play</button>
+      <label for="maskSize" class="dimtxt">Box size</label><input type="range" id="maskSize" min="6" max="40" value="16">
+    </div>
+    <p id="filmMsg" style="font-weight:600"></p>
+  </div>
+  <div id="filmStage" style="margin-top:12px"><video id="clip" playsinline></video><div id="mask"></div><div id="mark" hidden></div></div>
+</section>
+</main>
+<section id="ctl" hidden>
+  <h1>Pocket Reads football</h1>
+  <div id="cStatus">This phone is the football</div>
+  <p class="dimtxt" id="cHelp">Hold it like a football in your throwing hand. The bottom of the phone is the nose of the ball and points at the TV. The top of the phone sits back by your ear. Grip it tight or strap it to a real ball.</p>
+  <button id="cGo" class="go">Turn on motion</button>
+  <div id="cPlay" hidden>
+    <div class="dimtxt">Last pump power</div><div id="cMeter"><i></i></div>
+    <div class="row" style="margin-top:16px"><button id="cSnap">Snap / next play</button><button id="cCenter">Recenter aim</button><button id="cRecal">New player setup</button></div>
+    <div class="row" style="margin-top:12px"><button id="cWrong">Last throw picked the wrong receiver</button><button id="cCopy">Copy throw data for Claude</button></div>
+    <p id="cNote" style="font-weight:600"></p><textarea id="cBox" hidden rows="4" style="width:100%" aria-label="Throw data"></textarea>
+    <p class="dimtxt">If the crosshair drifts off to one side, point the nose at the middle of the TV and tap Recenter aim.</p>
+  </div>
+</section>
+
+<script>
+"use strict";
+const PHONE=true; // phone-as-football needs a normally hosted https page
+const $=id=>document.getElementById(id);
+const W=1280,H=720,HOR=185,K=520,CAM={y:-8,h:5.2}; // quarterback camera: just behind the pocket, wide panoramic lens
+const FPS=30,T=5.2,N=Math.round(T*FPS);
+const COLORS=["#f5c542","#5fd3f3","#ff9e4a","#f48fd0","#b6f05a"];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rnd=(a,b)=>a+Math.random()*(b-a);
+
+/* ---------- playbook: routes as absolute waypoints (x across, y downfield, yards) ---------- */
+const START={X:[-16,0],H:[-7,-0.5],Y:[7,-0.5],Z:[16,0],R:[2.5,-5]};
+const PLAYS=[
+ {name:"Smash",r:{X:{p:[[-16,5.5],[-16.5,4.5]]},H:{p:[[-7,10],[-19,21]],c:1},Y:{p:[[7,10],[19,21]],c:1},Z:{p:[[16,5.5],[16.5,4.5]]},R:{p:[[9,-3],[15,1]]}}},
+ {name:"Four Verticals",r:{X:{p:[[-17,40]]},H:{p:[[-6.5,40]]},Y:{p:[[6.5,40]]},Z:{p:[[17,40]]},R:{p:[[1,4.5]]}}},
+ {name:"Slant Flat",r:{X:{p:[[-16,3],[-5,12]],c:1},H:{p:[[-9,2],[-20,3]]},Y:{p:[[9,2],[20,3]]},Z:{p:[[16,3],[5,12]],c:1},R:{p:[[0,5]]}}},
+ {name:"Mesh",r:{X:{p:[[-16,12],[2,12.5]],c:1},H:{p:[[-5,2],[18,5]]},Y:{p:[[5,1.5],[-18,4.5]]},Z:{p:[[16,10],[23,19]]},R:{p:[[11,-3],[19,1]]}}},
+ {name:"Flood",r:{X:{p:[[-16,12],[-3,27]],c:1},H:{p:[[-6,3],[13,6]]},Y:{p:[[7,10],[20,15]]},Z:{p:[[17.5,40]]},R:{p:[[9,-2.5],[20,1.5]]}}},
+ {name:"Stick",r:{X:{p:[[-16,3],[-6,11]],c:1},H:{p:[[-7,5.5],[-7.5,4.8]]},Y:{p:[[7,6],[8.5,5.5]]},Z:{p:[[17.5,40]]},R:{p:[[10,-2.5],[20,1.5]]}}},
+ {name:"Dagger",r:{X:{p:[[-16,14],[5,15.5]],c:1},H:{p:[[-6.5,40]]},Y:{p:[[6,3],[-12,5.5]]},Z:{p:[[16,15],[19.5,11.5]]},R:{p:[[2,3.5]]}}}
+];
+const ROLES=["X","H","Y","Z","R"];
+const COV={
+ C3:{name:"Cover 3",shell:"one",note:"Three deep, four under. Look for the seams between the deep thirds and the curl and flat areas outside."},
+ C2:{name:"Cover 2",shell:"two",note:"Two deep safeties with corners squatting in the flats. The soft spots are the sideline hole behind the corner and the deep middle."},
+ C1:{name:"Cover 1 (man)",shell:"one",note:"Man coverage with one deep safety. Crossers, rubs and breaks away from leverage win. Corners pressing is a tell."},
+ C4:{name:"Cover 4 (quarters)",shell:"two",note:"Four deep takes away the verticals. The underneath and flat routes come open, so take the easy completion."},
+ C0:{name:"Cover 0 blitz",shell:"two",note:"All-out man with no deep help and extra rushers. The ball has to be out fast, usually to a quick breaker."}
+};
+const SPD=7.2;
+function routePos(role,play,t){
+  const s=START[role],r=play.r[role];
+  let d=t<0.5?SPD*t*t:SPD*(t-0.25), x=s[0],y=s[1];
+  for(const [px,py] of r.p){const L=Math.hypot(px-x,py-y); if(d<=L){const k=L?d/L:0;return [x+(px-x)*k,y+(py-y)*k];} d-=L;x=px;y=py;}
+  if(r.c){const n=r.p.length,a=n>1?r.p[n-2]:s,b=r.p[n-1],L=Math.hypot(b[0]-a[0],b[1]-a[1])||1;
+    return [clamp(x+(b[0]-a[0])/L*d,-25,25),clamp(y+(b[1]-a[1])/L*d,-6,45)];}
+  return [x,y];
+}
+function buildPlay(noDef){
+  const play=PLAYS[Math.floor(Math.random()*PLAYS.length)];
+  const ck=["C3","C3","C2","C2","C1","C1","C4","C0"][Math.floor(Math.random()*8)],cov=COV[ck];
+  const flip=Math.random()<0.5?-1:1;
+  const shell=Math.random()<0.3?(cov.shell==="one"?"two":"one"):cov.shell;
+  const press=(ck==="C1"||ck==="C0")&&Math.random()<0.65;
+  const man=r=>({man:ROLES.indexOf(r)}),deep=(x,w)=>({deep:x,w}),und=(x,y,r=6.5)=>({ux:x,uy:y,r});
+  const S=shell==="two"?[[-10,13],[10,13]]:(cov.shell==="two"?[[-2,14],[8,10]]:[[0,14],[9,7]]);
+  const D=[{x:-16,y:press?1.8:6.5},{x:16,y:press?1.8:6.5},{x:-7,y:4.5},{x:7,y:4.5},{x:0,y:5},{x:S[0][0],y:S[0][1]},{x:S[1][0],y:S[1][1]}];
+  const J={
+   C3:[deep(-17,9),deep(17,9),und(-14,7),und(4.5,9),und(-4.5,9),deep(0,8.5),und(14,7)],
+   C2:[und(-17,5,5.5),und(17,5,5.5),und(-8,9),und(8,9),und(0,11),deep(-13,13.5),deep(13,13.5)],
+   C1:[man("X"),man("Z"),man("H"),man("Y"),man("R"),deep(0,27),und(0,8)],
+   C4:[deep(-17,7.5),deep(17,7.5),und(-12,6),und(12,6),und(0,7),deep(-6.5,7),deep(6.5,7)],
+   C0:[man("X"),man("Z"),man("H"),man("Y"),man("R"),{rush:1},{rush:1}]
+  }[ck];
+  if(noDef)D.length=0;
+  const sack=noDef?99:ck==="C0"?rnd(2.2,2.8):rnd(2.2,4.1); // time until the rush gets home, different every snap
+  const frames=[];
+  for(let k=0;k<N;k++){
+    const t=k/FPS, r=ROLES.map(R=>routePos(R,play,t)), rl=ROLES.map(R=>routePos(R,play,Math.max(0,t-0.27)));
+    if(k>0) D.forEach((d,i)=>{
+      const j=J[i];let tx=d.x,ty=d.y,sp=6.3;
+      if(j.rush){tx=0;ty=-6;sp=7;}
+      else if(j.man!==undefined){tx=rl[j.man][0];ty=rl[j.man][1]-0.2;sp=7.0;}
+      else if(t<0.25){sp=0;}
+      else if(j.deep!==undefined){
+        const base=Math.min(14+t*2,22);let th=null;
+        r.forEach(p=>{if(Math.abs(p[0]-j.deep)<=j.w&&p[1]>6&&(!th||p[1]>th[1]))th=p;});
+        tx=th?j.deep+(th[0]-j.deep)*0.7:j.deep;ty=th?Math.max(base,th[1]+2.5):base;sp=7.3;
+      }else{
+        let best=null,bd=j.r;
+        rl.forEach(p=>{const dd=Math.hypot(p[0]-j.ux,p[1]-j.uy);if(dd<bd&&p[1]>-1){bd=dd;best=p;}});
+        tx=best?best[0]*0.8+j.ux*0.2:j.ux;ty=best?best[1]*0.8+j.uy*0.2+0.3:j.uy;
+      }
+      const dx=tx-d.x,dy=ty-d.y,L=Math.hypot(dx,dy),st=sp/FPS;
+      if(L>0.01){const k2=Math.min(1,st/L);d.x+=dx*k2;d.y+=dy*k2;}
+    });
+    frames.push({r:r.map(p=>[p[0]*flip,p[1]]),d:D.map(d=>[d.x*flip,d.y])});
+  }
+  // number receivers left to right
+  const order=[0,1,2,3,4].sort((a,b)=>frames[0].r[a][0]-frames[0].r[b][0]);
+  frames.forEach(f=>{f.r=order.map(i=>f.r[i]);});
+  const P={play,cov,ck,shell,frames,sack,disguised:shell!==cov.shell};
+  const f1=Math.floor(Math.random()*4);P.line={free:Math.random()<0.4?[f1,(f1+1+Math.floor(Math.random()*3))%4]:[f1],tFree:sack-rnd(0.65,0.95)};
+  // find best read
+  P.best={ev:-99};P.bestFor=[];
+  for(let i=0;i<5;i++){let b={ev:-99};
+    for(let t=0.7;t<Math.min(sack,T)-0.05;t+=0.1){const e=evalThrow(P,i,t);if(e.ev>b.ev)b=e;}
+    P.bestFor.push(b);if(b.ev>P.best.ev)P.best=b;}
+  return P;
+}
+const fr=(P,t)=>P.frames[clamp(Math.round(t*FPS),0,N-1)];
+function evalThrow(P,i,t,spd){spd=spd||22;
+  let ft=0.7,ta,p;
+  for(let k=0;k<3;k++){ta=Math.min(t+ft,T-0.04);p=fr(P,ta).r[i];ft=0.3+Math.hypot(p[0],p[1]+7)/spd;}
+  ta=Math.min(t+ft,T-0.04);const f=fr(P,ta);p=f.r[i];
+  let sep=99;f.d.forEach(d=>{sep=Math.min(sep,Math.hypot(d[0]-p[0],d[1]-p[1]));});
+  const se=sep-0.9*ft, pc=clamp((se-0.4)/2.6,0.03,0.95)*(1-clamp((Math.hypot(p[0],p[1]+7)-22)/40,0,0.55)), pi=se<1.2?clamp(0.3*(1.2-se),0,0.4):0.01;
+  const air=Math.hypot(p[0],p[1]+7), yards=p[1]+clamp(se,0,5);
+  return {i,t,ta,ft,sep:se,p,ev:pc*yards-pi*20,yards};
+}
+
+/* ---------- rendering ---------- */
+const cv=$("stage"),g=cv.getContext("2d");
+function proj(x,y,z){ // panoramic (cylindrical) lens: wide enough to see both sidelines from the pocket
+  const d=y-CAM.y;if(d<0.3)return null;const r=Math.hypot(x,d);return {x:W/2+K*Math.atan2(x,d),y:HOR+K*(CAM.h-(z||0))/r,s:K/r};}
+let fieldCv=null;
+function paintField(g){
+  const SL=26.67,Y0=CAM.y+0.6,YB=77,WALL=79;
+  const path=pts=>{g.beginPath();pts.forEach((q,i)=>i?g.lineTo(q.x,q.y):g.moveTo(q.x,q.y));g.closePath();};
+  const ring=(x1,y1,x2,y2,nx,ny)=>{const p=[];for(let i=0;i<=nx;i++)p.push(proj(x1+(x2-x1)*i/nx,y2,0));for(let j=1;j<=ny;j++)p.push(proj(x2,y2+(y1-y2)*j/ny,0));
+    for(let i=1;i<=nx;i++)p.push(proj(x2+(x1-x2)*i/nx,y1,0));for(let j=1;j<ny;j++)p.push(proj(x1,y1+(y2-y1)*j/ny,0));return p;};
+  const rect=(x1,y1,x2,y2,col,nx,ny)=>{g.fillStyle=col;path(ring(x1,y1,x2,y2,nx||1,ny||1));g.fill();};
+  // night sky and stands
+  const base=HOR+46;g.fillStyle="#05080f";g.fillRect(0,0,W,base);
+  const th=(base-22)/3;
+  for(let ti=0;ti<3;ti++){const a=14+ti*th,b=a+th-8;g.fillStyle=["#1b2231","#202838","#252e40"][ti];g.fillRect(0,a,W,b-a+8);
+    let seed=ti*977+13;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
+    for(let i=0;i<2400;i++){const x=rnd()*W,y=a+rnd()*(b-a),k=rnd();
+      g.fillStyle=k<0.5?"rgba(226,214,200,"+(0.25+rnd()*0.3)+")":k<0.75?"rgba(170,40,60,.55)":k<0.9?"rgba(60,90,170,.5)":"rgba(240,240,240,.6)";g.fillRect(x,y,2.2,2.6);}
+    g.fillStyle="rgba(0,0,0,.35)";for(let x=80;x<W;x+=160)g.fillRect(x,a,3,b-a);
+    g.fillStyle="#0c1119";g.fillRect(0,b,W,8);}
+  // turf out to the far wall
+  const far=[];for(let x=-640;x<=640;x+=16)far.push(proj(x,WALL,0));
+  const turf=g.createLinearGradient(0,HOR,0,H);turf.addColorStop(0,"#1f6d38");turf.addColorStop(1,"#2a8a47");g.fillStyle=turf;path(far.concat([{x:W,y:far[far.length-1].y},{x:W,y:H},{x:0,y:H},{x:0,y:far[0].y}]));g.fill();
+  for(let x=-640,k=0;x<640;x+=10,k++){g.fillStyle=k%3===0?"#7a1626":k%3===1?"#1d3a7a":"#101a33";path([proj(x,WALL,0),proj(x+10,WALL,0),proj(x+10,WALL,1.9),proj(x,WALL,1.9)]);g.fill();}
+  // mowing stripes, end zone, borders
+  for(let y=-10,k=0;y<65;y+=5,k++){if(y+5<=Y0)continue;rect(-SL,Math.max(y,Y0),SL,y+5,k%2?"#2f9450":"#2a8747",32,1);}
+  rect(-SL,65,SL,75,"#1c2f5e",32,1);
+  rect(-SL-2,Y0,-SL,YB,"#f4f6f2",1,90);rect(SL,Y0,SL+2,YB,"#f4f6f2",1,90);rect(-SL-2,75,SL+2,YB,"#f4f6f2",32,1);
+  for(let y=0;y<=65;y+=5)rect(-SL,y-0.07,SL,y+0.07+(y===65?0.15:0),"rgba(255,255,255,.88)",32,1);
+  for(let y=-2;y<65;y++){if(y%5===0)continue;[-3.42,2.75,-SL,SL-0.67].forEach(x=>rect(x,y-0.05,x+0.67,y+0.05,"rgba(255,255,255,.8)"));}
+  // painted yard numbers (ball on the offense's 35)
+  g.fillStyle="rgba(255,255,255,.85)";g.textAlign="center";g.textBaseline="middle";g.font="800 20px 'Saira Condensed',Arial Narrow,sans-serif";
+  for(let y=5;y<=55;y+=10){const v=35+y,n=String(v<=50?v:100-v).split("").join(" ");[-15.2,15.2].forEach(x=>{const q=proj(x,y,0),qx=proj(x+0.5,y,0),qy=proj(x,y+0.5,0);
+    g.save();g.setTransform((qx.x-q.x)/4,(qx.y-q.y)/4,-(qy.x-q.x)/4,-(qy.y-q.y)/4,q.x,q.y);g.fillText(n,0,0);g.restore();});}
+  rect(-SL,-0.09,SL,0.09,"rgba(70,150,255,.95)",32,1);rect(-SL,9.9,SL,10.1,"rgba(255,214,60,.95)",32,1); // line of scrimmage and first down
+  // goal post
+  const P3=(x,z)=>proj(x,75,z);g.strokeStyle="#f2cf3a";g.lineCap="round";g.lineWidth=3;g.beginPath();
+  let a=P3(0,0),b=P3(0,3.33);g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);a=P3(-3.08,3.33);b=P3(3.08,3.33);g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);
+  [-3.08,3.08].forEach(x=>{const u=P3(x,3.33),v=P3(x,11.6);g.moveTo(u.x,u.y);g.lineTo(v.x,v.y);});g.stroke();
+  const vg=g.createRadialGradient(W/2,H*0.55,H*0.35,W/2,H*0.55,W*0.75);vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(0,0,0,.38)");g.fillStyle=vg;g.fillRect(0,0,W,H);
+}
+function drawField(){
+  if(!fieldCv){fieldCv=document.createElement("canvas");fieldCv.width=W;fieldCv.height=H;paintField(fieldCv.getContext("2d"));}
+  g.drawImage(fieldCv,0,0);
+}
+const TEAM=[{j:"#f3f5f2",j2:"#bfc5ca",pant:"#1c2f5e",helm:"#1c2f5e",stripe:"#eef0f2",num:"#1c2f5e",skin:"#8a5a3c"},
+            {j:"#b01f35",j2:"#6d1020",pant:"#e9e4d6",helm:"#b01f35",stripe:"#f3e9c9",num:"#f6f2e6",skin:"#6b4630"}];
+const ON=["11","80","87","13","28"],DN=["24","21","5","54","52","29","33"];
+function fig(x,y,team,o){
+  o=o||{};const a=o.scr||proj(x,y,0),b=o.scr?{y:o.scr.y-o.scr.u}:proj(x,y,o.ht||2);if(!a)return;
+  const T=TEAM[team],u=a.y-b.y,cx=a.x,fy=a.y,wd=o.wide||1,ph=o.run?Math.sin(o.run):0,hip=fy-u*0.47,sh=fy-u*0.8;
+  g.save();g.lineCap="round";g.lineJoin="round";
+  g.globalAlpha=(o.alpha||1)*0.32;g.fillStyle="#000";g.beginPath();g.ellipse(cx+u*0.12,fy+u*0.01,u*0.34*wd,u*0.065,0,0,7);g.fill();g.globalAlpha=o.alpha||1;
+  [[-1,ph],[1,-ph]].forEach(([sd,p])=>{ // legs: thigh, sock, cleat
+    const kx=cx+sd*u*0.09*wd+p*u*0.04,ky=fy-u*0.24-Math.max(0,p)*u*0.03,fx=cx+sd*u*0.095*wd+p*u*0.07,ft=fy-Math.max(0,-p)*u*0.09;
+    g.strokeStyle=T.pant;g.lineWidth=u*0.125*wd;g.beginPath();g.moveTo(cx+sd*u*0.075*wd,hip);g.lineTo(kx,ky);g.stroke();
+    g.strokeStyle="#ecebe6";g.lineWidth=u*0.085;g.beginPath();g.moveTo(kx,ky);g.lineTo(fx,ft-u*0.05);g.stroke();
+    g.fillStyle="#0f0f10";g.beginPath();g.ellipse(fx,ft-u*0.018,u*0.06,u*0.032,0,0,7);g.fill();});
+  [[-1,-ph],[1,ph]].forEach(([sd,p])=>{ // arms
+    const ex=cx+sd*u*0.29*wd,ey=sh+u*0.19,hx=cx+sd*u*(0.27-(o.run?0.06:0))*wd,hy=hip-u*0.02-(o.run?u*0.1:0)+p*u*0.09;
+    g.strokeStyle=T.j2;g.lineWidth=u*0.09;g.beginPath();g.moveTo(cx+sd*u*0.24*wd,sh+u*0.05);g.lineTo(ex,ey);g.stroke();
+    g.strokeStyle=T.skin;g.lineWidth=u*0.068;g.beginPath();g.moveTo(ex,ey);g.lineTo(hx,hy);g.stroke();});
+  const gr=g.createLinearGradient(cx-u*0.27*wd,0,cx+u*0.27*wd,0);gr.addColorStop(0,T.j);gr.addColorStop(0.55,T.j);gr.addColorStop(1,T.j2);g.fillStyle=gr; // jersey over shoulder pads
+  g.beginPath();g.moveTo(cx-u*0.27*wd,sh+u*0.02);g.quadraticCurveTo(cx-u*0.2*wd,sh-u*0.06,cx,sh-u*0.05);g.quadraticCurveTo(cx+u*0.2*wd,sh-u*0.06,cx+u*0.27*wd,sh+u*0.02);
+  g.lineTo(cx+u*0.25*wd,sh+u*0.13);g.lineTo(cx+u*0.16*wd,hip+u*0.03);g.lineTo(cx-u*0.16*wd,hip+u*0.03);g.lineTo(cx-u*0.25*wd,sh+u*0.13);g.closePath();g.fill();
+  g.fillStyle=T.pant;g.fillRect(cx-u*0.16*wd,hip-u*0.01,u*0.32*wd,u*0.06);
+  if(o.n&&u>26){g.fillStyle=T.num;g.font="800 "+Math.round(u*0.2)+"px 'Saira Condensed',Arial Narrow,sans-serif";g.textAlign="center";g.textBaseline="middle";g.fillText(o.n,cx,sh+u*0.16);}
+  const hy=fy-u*0.905,hr=u*0.1; // helmet
+  g.fillStyle=T.skin;g.fillRect(cx-u*0.035,hy+hr*0.6,u*0.07,u*0.06);
+  const hg=g.createRadialGradient(cx-hr*0.35,hy-hr*0.4,hr*0.1,cx,hy,hr);hg.addColorStop(0,"#ffffff");hg.addColorStop(0.18,T.helm);hg.addColorStop(1,T.helm);g.fillStyle=hg;g.beginPath();g.arc(cx,hy,hr,0,7);g.fill();
+  g.strokeStyle=T.stripe;g.lineWidth=Math.max(1,u*0.024);g.beginPath();g.moveTo(cx,hy-hr);g.lineTo(cx,hy+(o.front?-hr*0.15:hr*0.75));g.stroke();
+  if(o.front){g.fillStyle="#17181a";g.beginPath();g.arc(cx,hy+hr*0.22,hr*0.74,0.05,Math.PI-0.05);g.fill();
+    g.strokeStyle="#c3c7cb";g.lineWidth=Math.max(1,u*0.016);g.beginPath();g.moveTo(cx-hr*0.72,hy+hr*0.3);g.lineTo(cx+hr*0.72,hy+hr*0.3);g.moveTo(cx-hr*0.58,hy+hr*0.62);g.lineTo(cx+hr*0.58,hy+hr*0.62);g.moveTo(cx,hy+hr*0.3);g.lineTo(cx,hy+hr*0.9);g.stroke();}
+  g.restore();
+}
+let P=null,state="pre",tNow=0,tThrow=0,res=null,hover=-1,last=0,stats={n:0,sum:0,streak:0},aimX=null,aimD=null,lastPow=null,conn=null,sentState="",cal=null,calS=[],calMsg="",calFlash=0,azRef=null,azOff=0,powRef=30,aimNote="",train=false,tgt=-1,trainN=0,trainHit=0,trainS=[],shakeUntil=0,playId=0;
+function labelPos(i,f){const p=f.r[i],q=proj(p[0],p[1],2.9);return q;}
+function draw(){
+  if(state==="cal"){drawCal();return;}
+  const shaking=performance.now()<shakeUntil;if(shaking){g.save();g.translate(rnd(-10,10),rnd(-8,8));}
+  drawField();
+  const f=fr(P,tNow), items=[];
+  const f0=fr(P,Math.max(0,tNow-0.12)),run=(a,b,k)=>state!=="pre"&&Math.hypot(a[0]-b[0],a[1]-b[1])>0.25?tNow*11+k*1.7:0;
+  f.d.forEach((d,j)=>items.push({y:d[1],fn:()=>fig(d[0],d[1],1,{n:DN[j],front:1,run:run(d,f0.d[j],j)})}));
+  f.r.forEach((r,i)=>items.push({y:r[1],fn:()=>fig(r[0],r[1],0,{n:ON[i],run:run(r,f0.r[i],i+7)})}));
+  // the pocket: linemen kick back into an arc, rushers fight them, and near the end one or two break free
+  const tl=state==="pre"?0:tNow,dep=train?0.15*Math.min(tl,1):Math.min(tl,3)/3*(2-Math.min(tl,3)/3),OLX=[-3,-1.5,0,1.5,3],OLD=[2.5,1.6,1.1,1.6,2.5];
+  const ol=OLX.map((x,i)=>[x*(1+0.22*dep*(i===0||i===4?1:0.3)),-1.2-OLD[i]*dep]);
+  ol.forEach((o,i)=>items.push({y:o[1],fn:()=>fig(o[0],o[1],0,{ht:1.7,wide:1.35,alpha:.62,n:String(70+i*2),run:tl>0&&tl<1.2?tl*8+i:0})}));
+  if(!train)[-3.4,-1.2,1.2,3.4].forEach((x0,j)=>{const o=ol[[0,1,3,4][j]],sd=j<2?-1:1,c=clamp(tl/0.4,0,1);
+    let x=x0+(o[0]+sd*0.25+Math.sin(tl*7+j*2)*0.13-x0)*c,y=0.6+(o[1]+1.15+Math.cos(tl*6+j)*0.1-0.6)*c,al=.7;
+    let scr=null;
+    if(P.line.free.includes(j)&&tl>P.line.tFree){ // beat his man: he sheds the block and closes on you, filling the screen
+      const k=clamp((tl-P.line.tFree)/(P.sack-P.line.tFree),0,1),e=k*k,q=proj(x,y,0),u=1.8*q.s,side=P.line.free.length>1?(j===P.line.free[0]?-1:1):sd;
+      scr={x:q.x+(W/2+side*200-q.x)*e+side*90*Math.sin(Math.PI*k),y:q.y+(H+270-q.y)*e,u:u+(600-u)*e};al=1;y=-20;}
+    items.push({y,fn:()=>fig(x,y,1,{ht:1.8,wide:1.3,alpha:al,front:1,n:String(91+j),run:tl>0?tl*9+j:0,scr})});});
+  items.sort((a,b)=>b.y-a.y).forEach(it=>it.fn());
+  if(state==="pre"){ // pre-snap route art, gone at the snap
+    const kMax=Math.round(3.4*FPS);g.lineJoin="round";g.lineCap="round";
+    for(let i=0;i<5;i++){const pts=[];for(let k=0;k<=kMax;k+=2){const p=P.frames[k].r[i],q=proj(p[0],p[1],0);if(q)pts.push(q);}
+      if(pts.length<3)continue;const n=pts.length,a=pts[n-1],b0=pts[Math.max(0,n-5)],ang=Math.atan2(a.y-b0.y,a.x-b0.x);
+      [["rgba(0,0,0,.55)",9],[COLORS[i],5]].forEach(([c,w])=>{g.strokeStyle=c;g.lineWidth=w;g.beginPath();pts.forEach((q,k)=>k?g.lineTo(q.x,q.y):g.moveTo(q.x,q.y));g.stroke();});
+      g.fillStyle=COLORS[i];g.beginPath();g.moveTo(a.x+14*Math.cos(ang),a.y+14*Math.sin(ang));g.lineTo(a.x+11*Math.cos(ang+2.4),a.y+11*Math.sin(ang+2.4));g.lineTo(a.x+11*Math.cos(ang-2.4),a.y+11*Math.sin(ang-2.4));g.fill();}
+  }
+  if(aimX!==null&&state!=="done"){hover=pick(aimX,aimD);
+    const ay=aimD===null?HOR+70:HOR+K*(CAM.h-1.2)*Math.cos((aimX-W/2)/K)/Math.max(1,aimD-CAM.y);
+    g.strokeStyle="rgba(0,0,0,.5)";g.lineWidth=7;g.beginPath();g.arc(aimX,ay,22,0,7);g.stroke();
+    g.strokeStyle="#fff";g.lineWidth=3;g.beginPath();g.arc(aimX,ay,22,0,7);g.moveTo(aimX,ay-36);g.lineTo(aimX,ay+36);g.moveTo(aimX-36,ay);g.lineTo(aimX+36,ay);g.stroke();}
+  if(train&&tgt>=0){const p=f.r[tgt],q=proj(p[0],p[1],0),t=proj(p[0],p[1],2.6); // the receiver to throw to
+    if(q){g.strokeStyle="#39ff7a";g.lineWidth=5;g.beginPath();g.ellipse(q.x,q.y,q.s*1.05,q.s*0.3,0,0,7);g.stroke();
+      g.beginPath();g.ellipse(q.x,(q.y+t.y)/2,q.s*0.95,(q.y-t.y)*0.62,0,0,7);g.stroke();
+      g.fillStyle="#39ff7a";g.beginPath();g.moveTo(t.x,t.y-6);g.lineTo(t.x-13,t.y-28);g.lineTo(t.x+13,t.y-28);g.fill();}}
+  // highlight the receiver you are aimed at (no labels over the others)
+  if(hover>=0&&(state==="live"||aimX!==null&&state==="pre")){const p=f.r[hover],q=proj(p[0],p[1],0),t=proj(p[0],p[1],2.5);
+    if(q){g.strokeStyle="#fff";g.lineWidth=3;g.beginPath();g.ellipse(q.x,q.y,q.s*0.75,q.s*0.2,0,0,7);g.stroke();
+      g.fillStyle="#fff";g.beginPath();g.moveTo(t.x,t.y);g.lineTo(t.x-9,t.y-14);g.lineTo(t.x+9,t.y-14);g.fill();}}
+  // ball
+  if((state==="flight"||state==="done")&&res){const k=clamp((tNow-tThrow)/res.ft,0,1),bx=res.p[0]*k,by=-7+(res.p[1]+7)*k,bz=2+(1.6-2)*k+res.ft*4.5*k*(1-k);
+    const q=proj(bx,by,bz);if(q){g.fillStyle="#7a4a21";g.strokeStyle="#fff";g.lineWidth=1.5;g.beginPath();g.ellipse(q.x,q.y,Math.max(5,q.s*0.32),Math.max(3.5,q.s*0.2),-0.5,0,7);g.fill();g.stroke();}}
+  drawQB();
+  let msg=state==="done"?banner:"";
+  if(msg){g.font="800 34px 'Saira Condensed',sans-serif";const w=g.measureText(msg).width+40;g.fillStyle="rgba(8,12,10,.78)";g.fillRect(W/2-w/2,22,w,52);g.fillStyle="#f1f4ee";g.textAlign="center";g.textBaseline="middle";g.fillText(msg,W/2,49);}
+  if(state!=="pre"){g.font="800 30px 'Saira Condensed',sans-serif";g.fillStyle="rgba(255,255,255,.9)";g.textAlign="left";g.textBaseline="middle";g.fillText((state==="live"?tNow:tThrow).toFixed(1)+"s",40,48);}
+  if(shaking)g.restore();
+}
+function drawQB(){ // you: the back of the helmet and shoulder pads at the bottom of the screen
+  const sacked=state==="done"&&!res&&!train,live=state==="live"||state==="flight",cx=W/2+(live?Math.sin(tNow*5)*4:0),by=H+(live?Math.sin(tNow*10)*3:0)+(sacked?70:0);
+  g.save();g.translate(cx,by);g.scale(0.85,0.85);if(sacked)g.rotate(0.22);
+  const pg=g.createLinearGradient(-250,0,250,0);pg.addColorStop(0,"#f3f5f2");pg.addColorStop(0.6,"#f3f5f2");pg.addColorStop(1,"#b9bfc5");g.fillStyle=pg;
+  g.beginPath();g.moveTo(-270,10);g.quadraticCurveTo(-250,-62,-120,-74);g.lineTo(120,-74);g.quadraticCurveTo(250,-62,270,10);g.closePath();g.fill();
+  g.fillStyle="#1c2f5e";g.fillRect(-120,-80,240,10);
+  g.fillStyle="#8a5a3c";g.fillRect(-34,-104,68,34);
+  const hg=g.createRadialGradient(-28,-150,8,0,-118,84);hg.addColorStop(0,"#5b76b8");hg.addColorStop(0.25,"#1c2f5e");hg.addColorStop(1,"#131f3f");g.fillStyle=hg;g.beginPath();g.arc(0,-118,80,0,7);g.fill();
+  g.fillStyle="#eef0f2";g.fillRect(-9,-198,18,112);g.fillStyle="#131f3f";g.fillRect(-52,-52,104,12);
+  g.restore();
+}
+let banner="";
+function loop(ts){
+  const dt=Math.min(0.05,(ts-last)/1000||0);last=ts;
+  if(state==="live"){tNow+=dt;if(tNow>=Math.min(P.sack,T-0.15)){tThrow=tNow;finish(null);}}
+  else if(state==="flight"){tNow+=dt;if(tNow>=tThrow+res.ft){tNow=tThrow+res.ft;finish(res);}}
+  if(conn&&state!==sentState){sentState=state;try{conn.send({t:"s",s:state});}catch(_){}}
+  draw();requestAnimationFrame(loop);
+}
+function newPlay(){playId++;P=buildPlay(train);tgt=train?Math.floor(Math.random()*5):-1;state="pre";tNow=0;res=null;hover=-1;$("readout").hidden=true;$("snapBtn").textContent="Snap";$("snapBtn").disabled=false;}
+function snap(){if(state==="pre"){state="live";tNow=0;$("snapBtn").disabled=true;}else if(state==="done")newPlay();}
+function throwTo(i,pow,ago){if(state!=="live"||tNow<0.25||i<0)return;tThrow=Math.max(0.25,tNow-(ago||0));lastPow=pow===undefined?null:pow;res=evalThrow(P,i,tThrow,pow===undefined?22:15+13*pow);state="flight";}
+/* ---------- phone football: aim model ----------
+   The phone sends where its bottom edge (the nose of the ball) points at the end of each pump:
+   az = left/right heading in degrees, el = degrees above level. Setup throws teach the game how
+   this player's motion maps to the screen: left/right from az, short/deep from el. */
+const CAL_T=[{x:-13,y:4,n:"SHORT LEFT",h:"Quick, flat pass"},{x:13,y:4,n:"SHORT RIGHT",h:"Quick, flat pass"},{x:0,y:12,n:"OVER THE MIDDLE",h:"Medium throw"},{x:-22,y:26,n:"DEEP LEFT",h:"Deep ball: put air under it"},{x:22,y:26,n:"DEEP RIGHT",h:"Deep ball: put air under it"}];
+const wrap=a=>((a%360)+540)%360-180;
+const dAz=az=>{if(azRef===null)azRef=az;return wrap(az-azRef)-azOff;};
+function linreg(xs,ys){const n=xs.length,mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;let sxx=0,sxy=0,syy=0;
+  xs.forEach((x,i)=>{sxx+=(x-mx)*(x-mx);sxy+=(x-mx)*(ys[i]-my);syy+=(ys[i]-my)*(ys[i]-my);});
+  if(sxx<1e-6)return {a:my,b:0,r2:0,spread:0};const b=sxy/sxx;return {a:my-b*mx,b,r2:syy?sxy*sxy/(sxx*syy):0,spread:Math.sqrt(sxx/n)};}
+function startCal(){state="cal";cal=null;calS=[];trainS=[];azRef=null;azOff=0;aimX=null;aimD=null;calMsg="";calFlash=0;$("readout").hidden=true;$("snapBtn").disabled=true;}
+function finishCal(){
+  if(state!=="cal"||calS.length<CAL_T.length)return;
+  const fx=linreg(calS.map(s=>s.az),CAL_T.map(t=>proj(t.x,t.y,0).x)),fd=linreg(calS.map(s=>s.el),CAL_T.map(t=>t.y));
+  if(fx.r2<0.6||fx.spread<3){logPush({k:"fit-failed",x:fx,d:fd});calS=[];calMsg="Could not tell your left throws from your right ones. Face the TV and finish each pump with the nose pointing at the target.";return;}
+  const depthOk=fd.r2>=0.45&&fd.spread>=2.5&&fd.b>0===(calS[3].el+calS[4].el>calS[0].el+calS[1].el);
+  cal={x:fx,d:depthOk?fd:null};powRef=calS.map(s=>s.pk).sort((a,b)=>a-b)[2];logPush({k:"fit",x:fx,d:fd,depthOk,powRef});
+  aimNote=depthOk?"":"Left and right aim is set. Short and deep pumps looked the same, so depth aiming is off. Run New player setup to try again.";
+  newPlay();
+}
+function aimFrom(m){return {x:clamp(cal.x.a+cal.x.b*dAz(m.az),0,W),d:cal.d?clamp(cal.d.a+cal.d.b*m.el,-5,42):null};}
+function pick(ax,ad,spd,t){ // nearest receiver to the aim point. Once the play is live, each receiver is judged by where
+  // he will be when the ball gets there, so you lead a moving receiver and throw straight at one who is sitting still.
+  const f=fr(P,tNow);let bi=-1,bs=1e9;
+  for(let i=0;i<5;i++){const p=state==="live"?evalThrow(P,i,t===undefined?tNow:t,spd||22).p:f.r[i],q=proj(p[0],p[1],2.9);if(!q)continue;
+    const dx=(clamp(q.x,20,W-20)-ax)/130,dd=ad===null?0:(p[1]-ad)/12,sc=dx*dx+dd*dd;if(sc<bs){bs=sc;bi=i;}}
+  return bi;}
+function ctlMsg(m){ // messages from the phone
+  if(m.t==="a"){if(cal&&state!=="cal"){const a=aimFrom(m);aimX=a.x;aimD=a.d;}else if(azRef===null)dAz(m.az);}
+  else if(m.t==="snap"){if(m.tr)logPush({k:"snap",state,tr:m.tr});snap();}
+  else if(m.t==="wrong"){for(let i=LOG.length-1;i>=0;i--)if(LOG[i].k==="throw"){LOG[i].wrong=m.want||true;break;}}
+  else if(m.t==="recal"){startCal();}
+  else if(m.t==="center"){if(cal&&cal.x.b)azOff+=dAz(m.az)-(W/2-cal.x.a)/cal.x.b;}
+  else if(m.t==="throw"){
+    if(state==="cal"){const now=performance.now();if(now<calFlash||calS.length>=CAL_T.length)return;calMsg="";const ct=CAL_T[calS.length];calS.push({az:dAz(m.az),el:m.el,pk:m.pk});logPush({k:"cal",target:ct.n,tx:Math.round(proj(ct.x,ct.y,0).x),td:ct.y,az:+dAz(m.az).toFixed(1),el:m.el,pk:m.pk,ago:m.ago,tr:m.tr});calFlash=now+900;if(calS.length===CAL_T.length)setTimeout(finishCal,900);}
+    else if(cal){const a=aimFrom(m);aimX=a.x;aimD=a.d;const pw=clamp(0.6*(m.pk-12)/Math.max(4,powRef-12),0.05,1),ago=(m.ago||0)/1000;const tt=Math.max(0.25,tNow-ago),pi=pick(a.x,a.d,15+13*pw,tt);
+      if(train){if(state==="live"&&tNow>=0.25)trainSample(m,a,pw,tt,pi);}
+      else if(state==="live"&&pi>=0)logPush({k:"throw",play:P.play.name,t:+tt.toFixed(2),az:+dAz(m.az).toFixed(1),el:m.el,pk:m.pk,ago:m.ago,ax:Math.round(a.x),ad:a.d===null?null:+a.d.toFixed(1),pow:+pw.toFixed(2),pick:ON[pi],
+        recs:[0,1,2,3,4].map(i=>{const e=evalThrow(P,i,tt,15+13*pw).p,q=proj(e[0],e[1],2.9);return {n:ON[i],x:Math.round(q.x),d:+e[1].toFixed(1)};}),tr:m.tr});
+      throwTo(pi,pw,ago);}
+  }
+}
+function drawCal(){
+  drawField();const n=calS.length,flash=performance.now()<calFlash,cur=flash?n-1:n;
+  CAL_T.forEach((t,i)=>{const q=proj(t.x,t.y,1.1),r=clamp(q.s*2.4,30,80);
+    fig(t.x,t.y,0,{n:ON[i],front:1,alpha:i===cur?1:0.4});
+    if(i===cur){const pulse=flash?0:6*Math.sin(performance.now()/160);g.strokeStyle=flash?"#59d98e":"#f5c542";g.lineWidth=7;g.beginPath();g.arc(q.x,q.y,r+pulse,0,7);g.stroke();}
+    else if(i<n){g.strokeStyle="#59d98e";g.lineWidth=4;g.beginPath();g.arc(q.x,q.y,r*0.6,0,7);g.stroke();}});
+  const t=CAL_T[Math.min(cur,CAL_T.length-1)];
+  const big=flash?"GOT IT":"SETUP "+(n+1)+" OF "+CAL_T.length+": PUMP AT "+t.n,small=flash?(n===CAL_T.length?"Setup done. Loading your first play.":"Next target coming up"):t.h+". Finish with the nose of the ball pointing at the target.";
+  g.fillStyle="rgba(8,12,10,.82)";g.fillRect(0,H-150,W,150);g.textAlign="center";g.textBaseline="middle";
+  g.fillStyle="#f5c542";g.font="800 46px 'Saira Condensed',sans-serif";g.fillText(big,W/2,H-108);
+  g.fillStyle="#f1f4ee";g.font="500 26px Barlow,sans-serif";g.fillText(small,W/2,H-62);
+  if(calMsg){g.fillStyle="#ff6b5e";g.font="600 22px Barlow,sans-serif";g.fillText(calMsg,W/2,H-24);}
+}
+/* ---------- throw log: raw sensor reads for tuning the motion code ---------- */
+const LOG=[],LOGKEY="pocketreads_log_v1";
+try{const sv=JSON.parse(localStorage.getItem(LOGKEY)||"[]");if(Array.isArray(sv))LOG.push(...sv.slice(-300));}catch(_){}
+function logSave(){try{localStorage.setItem(LOGKEY,JSON.stringify(LOG));}catch(_){}}
+function logButtons(){["copyBtn","clearBtn"].forEach(id=>{const b=$(id);if(b)b.hidden=!LOG.length;});}
+function logPush(e){e.at=new Date().toISOString().slice(0,19);LOG.push(e);if(LOG.length>300)LOG.shift();logSave();if(conn)try{conn.send({t:"r",e});}catch(_){}
+  logButtons();}
+function logText(extra){return "Pocket Reads throw data v1. Claude: use this to tune how throws are read.\n"+JSON.stringify(Object.assign({v:1,screen:navigator.userAgent,cam:CAM,K,W},extra||{},{log:LOG}));}
+async function copyOut(text,box){try{await navigator.clipboard.writeText(text);return true;}catch(_){box.hidden=false;box.value=text;box.focus();box.select();return false;}}
+window.__ctl=ctlMsg;
+function word(s){return s>=3?"wide open":s>=1.8?"open":s>=0.9?"a tight window":"covered";}
+function finishTrain(r){ // training rep: say what the game read, then load the next one
+  state="done";$("snapBtn").disabled=false;$("snapBtn").textContent="Next throw";
+  if(r){trainN++;if(r.i===tgt)trainHit++;}
+  banner=!r?"NO THROW READ":r.i===tgt?"READ RIGHT: #"+ON[tgt]:"READ AS #"+ON[r.i]+", YOU WANTED #"+ON[tgt];
+  $("trainMsg").textContent=trainN?"Throws: "+trainN+". Read correctly: "+trainHit+" ("+Math.round(100*trainHit/trainN)+"%). Model fitted on "+trainS.length+" training throws.":"Throw to the receiver marked in green.";
+  const id=playId;setTimeout(()=>{if(train&&state==="done"&&id===playId)newPlay();},1500);
+}
+function trainSample(m,a,pw,tt,pi){ // a training throw: we know who it was meant for, so learn from it
+  const e=evalThrow(P,tgt,tt,15+13*pw).p,q=proj(e[0],e[1],2.9),now=f=>({n:ON[f],x:Math.round(labelPos(f,fr(P,tt)).x),d:+fr(P,tt).r[f][1].toFixed(1)});
+  logPush({k:"train",play:P.play.name,t:+tt.toFixed(2),want:ON[tgt],pick:pi<0?null:ON[pi],hit:pi===tgt,az:+dAz(m.az).toFixed(1),el:m.el,pk:m.pk,ago:m.ago,pow:+pw.toFixed(2),ax:Math.round(a.x),ad:a.d===null?null:+a.d.toFixed(1),
+    lead:{x:Math.round(q.x),d:+e[1].toFixed(1)},now:now(tgt),recs:[0,1,2,3,4].map(i=>{const v=evalThrow(P,i,tt,15+13*pw).p;return {n:ON[i],x:Math.round(proj(v[0],v[1],2.9).x),d:+v[1].toFixed(1)};}),tr:m.tr});
+  trainS.push({az:dAz(m.az),el:m.el,x:q.x,d:e[1]});if(trainS.length>80)trainS.shift();
+  if(trainS.length>=8){const fx=linreg(trainS.map(v=>v.az),trainS.map(v=>v.x)),fd=linreg(trainS.map(v=>v.el),trainS.map(v=>v.d));
+    if(fx.r2>=0.6&&fx.spread>=3){const dOk=fd.r2>=0.4&&fd.spread>=2.5&&(!cal.d||fd.b>0===cal.d.b>0);cal={x:fx,d:dOk?fd:cal.d};if(dOk)aimNote="";
+      if(trainS.length%10===0)logPush({k:"refit",n:trainS.length,x:fx,d:fd,dOk});}}
+}
+function finish(r){
+  if(train){finishTrain(r);return;}
+  state="done";$("snapBtn").disabled=false;$("snapBtn").textContent="Next play";
+  const b=P.best;let pts=0,letter="F";
+  if(!r){shakeUntil=performance.now()+450;banner="SACKED: the rush got home in "+P.sack.toFixed(1)+"s";$("gYou").textContent="You held the ball for "+P.sack.toFixed(1)+"s and took the sack. The rush is different every snap, anywhere from 2.2 to 4.1 seconds.";$("gTime").textContent="";}
+  else{
+    pts=clamp(Math.round(100*r.ev/Math.max(b.ev,1)),0,100);
+    banner=(r.sep>=1.8?"COMPLETE":r.sep>=0.9?"CONTESTED":"COVERED")+": #"+ON[r.i]+" was "+word(r.sep);
+    $("gYou").textContent="You threw to #"+ON[r.i]+" at "+r.t.toFixed(1)+"s. He was "+word(r.sep)+" with about "+Math.max(0,r.sep).toFixed(1)+" yd of space, "+Math.round(r.p[1])+" yd downfield."+(lastPow===null?"":(aimD===null?"":" Your pump pointed about "+Math.round(aimD)+" yd deep.")+" Pump power "+Math.round(lastPow*100)+"%, "+(lastPow>0.66?"a rope.":lastPow>0.33?"a firm ball.":"a floater, so the defense had time to close."));
+    const bi=P.bestFor[r.i],d=r.t-bi.t;
+    $("gTime").textContent=r.ev>=0.88*bi.ev?"Timing: on time for that route.":d>0?"Timing: about "+d.toFixed(1)+"s late. His window was at "+bi.t.toFixed(1)+"s.":"Timing: about "+(-d).toFixed(1)+"s early. He comes open at "+bi.t.toFixed(1)+"s.";
+  }
+  letter=pts>=85?"A":pts>=68?"B":pts>=45?"C":pts>=25?"D":"F";
+  stats.n++;stats.sum+=pts;stats.streak=pts>=68?stats.streak+1:0;
+  $("sPlays").textContent=stats.n;$("sAvg").textContent=Math.round(stats.sum/stats.n);$("sStreak").textContent=stats.streak;
+  $("gLetter").textContent=letter;$("gLetter").style.color=pts>=68?"var(--good)":pts>=45?"var(--gold)":"var(--bad)";
+  $("gHead").textContent=pts+" / 100 on "+P.play.name;
+  $("gCov").textContent=P.cov.name+(P.disguised?" (disguised: showed "+(P.shell==="two"?"two":"one")+" high before the snap)":"");
+  $("gBest").textContent=(r&&r.i===b.i&&pts>=85)?"That was the best read on the field.":"Best read: #"+ON[b.i]+" at "+b.t.toFixed(1)+"s, "+word(b.sep)+" "+Math.round(b.p[1])+" yd downfield.";
+  $("gNote").textContent=P.cov.note+(conn&&aimNote?" "+aimNote:"");
+  $("readout").hidden=false;drawBoard(r);
+}
+function drawBoard(r){
+  const c=$("board"),b=c.getContext("2d"),BW=640,BH=420,sx=x=>BW/2+x*11.4,sy=y=>BH-90-y*9.2;
+  b.fillStyle="#174d2b";b.fillRect(0,0,BW,BH);b.strokeStyle="rgba(255,255,255,.25)";b.lineWidth=1;
+  for(let y=-3;y<=35;y+=5){b.beginPath();b.moveTo(sx(-26.6),sy(y));b.lineTo(sx(26.6),sy(y));b.stroke();}
+  b.strokeStyle="rgba(120,190,255,.9)";b.lineWidth=2;b.beginPath();b.moveTo(sx(-26.6),sy(0));b.lineTo(sx(26.6),sy(0));b.stroke();
+  const tr=r?r.t:P.sack,kEnd=clamp(Math.round((r?r.ta:P.sack)*FPS),0,N-1),kRel=clamp(Math.round(tr*FPS),0,N-1);
+  for(let i=0;i<5;i++){b.strokeStyle=COLORS[i];b.lineWidth=2.5;b.beginPath();for(let k=0;k<=kEnd;k+=2){const p=P.frames[k].r[i];k?b.lineTo(sx(p[0]),sy(p[1])):b.moveTo(sx(p[0]),sy(p[1]));}b.stroke();}
+  for(let j=0;j<7;j++){b.strokeStyle="rgba(255,120,110,.45)";b.lineWidth=1.5;b.beginPath();for(let k=0;k<=kRel;k+=2){const p=P.frames[k].d[j];k?b.lineTo(sx(p[0]),sy(p[1])):b.moveTo(sx(p[0]),sy(p[1]));}b.stroke();
+    const p=P.frames[kRel].d[j];b.strokeStyle="#ff6b5e";b.lineWidth=3;b.beginPath();b.moveTo(sx(p[0])-6,sy(p[1])-6);b.lineTo(sx(p[0])+6,sy(p[1])+6);b.moveTo(sx(p[0])+6,sy(p[1])-6);b.lineTo(sx(p[0])-6,sy(p[1])+6);b.stroke();}
+  if(r){b.setLineDash([6,5]);b.strokeStyle="#fff";b.lineWidth=2;b.beginPath();b.moveTo(sx(0),sy(-7));b.lineTo(sx(r.p[0]),sy(r.p[1]));b.stroke();b.setLineDash([]);}
+  const bp=fr(P,P.best.t).r[P.best.i];
+  for(let i=0;i<5;i++){const p=P.frames[kRel].r[i];b.fillStyle=COLORS[i];b.beginPath();b.arc(sx(p[0]),sy(p[1]),11,0,7);b.fill();b.fillStyle="#111";b.font="800 13px 'Saira Condensed',sans-serif";b.textAlign="center";b.textBaseline="middle";b.fillText(ON[i],sx(p[0]),sy(p[1])+1);}
+  b.strokeStyle="#f5c542";b.lineWidth=3;b.beginPath();b.arc(sx(bp[0]),sy(bp[1]),17,0,7);b.stroke();
+  b.fillStyle="#fff";b.beginPath();b.arc(sx(0),sy(-7),6,0,7);b.fill();b.font="600 13px Barlow,sans-serif";b.fillText("QB",sx(0),sy(-7)+18);
+}
+/* ---------- input ---------- */
+function nearest(ev,maxD){
+  const rc=cv.getBoundingClientRect(),x=(ev.clientX-rc.left)*W/rc.width,y=(ev.clientY-rc.top)*H/rc.height,f=fr(P,tNow);
+  let bi=-1,bd=maxD;
+  for(let i=0;i<5;i++){const q=labelPos(i,f);if(!q)continue;const d=Math.hypot(clamp(q.x,20,W-20)-x,(q.y+q.s)-y);if(d<bd){bd=d;bi=i;}}
+  return bi;
+}
+cv.addEventListener("pointermove",e=>{if(e.pointerType==="mouse")hover=nearest(e,170);});
+cv.addEventListener("pointerdown",e=>{if(state==="live"){const i=nearest(e,190);if(i>=0)throwTo(i);}});
+addEventListener("keydown",e=>{
+  if($("sim").hidden)return;
+  if(e.code==="Space"||e.key==="Enter"){e.preventDefault();snap();}
+  else if(e.key>="1"&&e.key<="5")throwTo(+e.key-1);
+});
+$("snapBtn").addEventListener("click",e=>{snap();e.currentTarget.blur();});
+function tab(v){ // "sim" | "train" | "film"
+  const film=v==="film",was=train;$("sim").hidden=film;$("film").hidden=!film;
+  $("tabSim").classList.toggle("on",v==="sim");$("tabTrain").classList.toggle("on",v==="train");$("tabFilm").classList.toggle("on",film);
+  if(!film){clip.pause();train=v==="train";$("trainBar").hidden=!train;$("simHelp").hidden=train;document.querySelector(".stats").hidden=train;if(train!==was&&state!=="cal")newPlay();}
+}
+$("tabSim").addEventListener("click",()=>tab("sim"));$("tabTrain").addEventListener("click",()=>tab("train"));$("tabFilm").addEventListener("click",()=>tab("film"));
+$("fsBtn").addEventListener("click",()=>{try{const el=$("sim").hidden?$("filmStage"):$("stageWrap");(document.fullscreenElement?document.exitFullscreen():el.requestFullscreen()).catch(()=>{});}catch(_){}} );
+
+/* ---------- film room ---------- */
+const clip=$("clip"),mask=$("mask"),mark=$("mark"),fs=$("filmStage");let myT=null,revealing=false;
+$("clipFile").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;clip.src=URL.createObjectURL(f);myT=null;mark.hidden=true;mask.hidden=false;$("filmReveal").disabled=true;$("filmMsg").textContent="Clip loaded. Cover the quarterback with the box, then press Play from start.";});
+$("filmPlay").addEventListener("click",()=>{if(!clip.src)return;myT=null;revealing=false;mark.hidden=true;mask.hidden=false;clip.currentTime=0;clip.play().catch(()=>{});$("filmMsg").textContent="Tap where you would throw, when you would throw it.";});
+$("maskSize").addEventListener("input",e=>{mask.style.width=e.target.value+"%";mask.style.height=(e.target.value*1.9)+"%";});
+let drag=null;
+mask.addEventListener("pointerdown",e=>{e.stopPropagation();const r=mask.getBoundingClientRect();drag={dx:e.clientX-r.left,dy:e.clientY-r.top};mask.setPointerCapture(e.pointerId);});
+mask.addEventListener("pointermove",e=>{if(!drag)return;const r=fs.getBoundingClientRect();mask.style.left=clamp((e.clientX-drag.dx-r.left)/r.width*100,0,95)+"%";mask.style.top=clamp((e.clientY-drag.dy-r.top)/r.height*100,0,95)+"%";});
+mask.addEventListener("pointerup",()=>{drag=null;});
+fs.addEventListener("pointerdown",e=>{
+  if(clip.paused||myT!==null||revealing)return;
+  const r=fs.getBoundingClientRect();myT=clip.currentTime;clip.pause();
+  mark.style.left=(e.clientX-r.left)/r.width*100+"%";mark.style.top=(e.clientY-r.top)/r.height*100+"%";mark.hidden=false;
+  $("filmReveal").disabled=false;$("filmMsg").textContent="You let it go at "+myT.toFixed(1)+"s, aimed at the gold ring. Now reveal the real play.";
+});
+$("filmReveal").addEventListener("click",()=>{if(myT===null)return;revealing=true;mask.hidden=true;clip.currentTime=Math.max(0,myT-2.5);clip.play().catch(()=>{});$("filmMsg").textContent="Watching the real quarterback. The clip pauses for a beat at your release point.";});
+let paused=false;
+clip.addEventListener("timeupdate",()=>{if(revealing&&!paused&&myT!==null&&clip.currentTime>=myT){paused=true;clip.pause();$("filmMsg").textContent="This is your release at "+myT.toFixed(1)+"s. Did the real quarterback already throw, and where?";setTimeout(()=>{clip.play().catch(()=>{});revealing=false;paused=false;},1600);}});
+
+/* ---------- phone as football: host side ---------- */
+function loadJs(u){return new Promise((ok,no)=>{const s=document.createElement("script");s.src=u;s.onload=ok;s.onerror=()=>no(new Error("load"));document.head.appendChild(s);});}
+const PEERJS="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js",QRJS="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+const code=new URLSearchParams(location.search).get("c");
+if(PHONE&&!code){$("linkCard").hidden=false;logButtons();
+  if(LOG.length)$("linkMsg").textContent=LOG.length+" saved throw entries from earlier sessions.";
+  $("clearBtn").addEventListener("click",()=>{LOG.length=0;logSave();logButtons();if(conn)try{conn.send({t:"rl",log:[]});}catch(_){}$("linkMsg").textContent="Saved throw data cleared.";});
+  $("copyBtn").addEventListener("click",async()=>{const ok=await copyOut(logText({fit:cal,powRef}),$("copyBox"));$("linkMsg").textContent=ok?"Throw data copied. Paste it into your chat with Claude.":"Select all the text in the box, copy it, and paste it to Claude.";});
+  $("linkBtn").addEventListener("click",async()=>{
+    if(location.protocol!=="https:"){$("linkMsg").textContent="This page has to be on an https web address before a phone can join.";return;}
+    $("linkMsg").textContent="Setting up...";
+    try{await Promise.all([loadJs(PEERJS),loadJs(QRJS)]);}catch(_){$("linkMsg").textContent="Could not load the connection library. Check the internet connection and try again.";return;}
+    const id=Math.random().toString(36).slice(2,8),peer=new Peer("pocketreads-"+id);
+    peer.on("open",()=>{const url=location.origin+location.pathname+"?c="+id;$("qr").hidden=false;$("qr").innerHTML="";new QRCode($("qr"),{text:url,width:150,height:150});$("linkMsg").textContent="Scan with the football phone";$("linkBtn").hidden=true;});
+    peer.on("connection",c=>{c.on("open",()=>{conn=c;sentState="";$("qr").hidden=true;$("linkMsg").textContent="Football phone connected";try{c.send({t:"rl",log:LOG});}catch(_){}startCal();});c.on("data",ctlMsg);c.on("close",()=>{conn=null;aimX=null;aimD=null;if(state==="cal")newPlay();$("qr").hidden=false;$("linkMsg").textContent="Phone disconnected. Scan again to rejoin.";});});
+    peer.on("error",e=>{$("linkMsg").textContent="Connection problem: "+(e.type||e.message)+". Reload and try again.";});
+  });
+}
+/* ---------- phone as football: phone side ---------- */
+if(PHONE&&code){
+  document.querySelector("main").hidden=true;$("ctl").hidden=false;
+  const RAD=Math.PI/180;
+  let c=null,ready=false,ps="cal",lastT=0,grav=[0,0,9.8],yaw=0,ori=null,useOri=null,t0=0,still=0,stillAt=0,mute=0,pump=null,lastSend=0,buf=[],plog=[];
+  const trace=t0=>buf.filter(b=>b[0]>=t0-350).map(b=>[Math.round(b[0]-t0),+b[1].toFixed(1),Math.round(b[2]),+b[3].toFixed(1),+b[4].toFixed(1)]);
+  const say=(a,b)=>{$("cStatus").textContent=a;if(b!==undefined)$("cHelp").textContent=b;};
+  const send=m=>{if(c&&c.open)try{c.send(m);}catch(_){}};
+  // Where the nose (bottom edge of the phone) points. From the orientation sensor when the phone has one,
+  // otherwise from the gyro and gravity. Signs do not matter: the setup throws learn the mapping.
+  addEventListener("deviceorientation",e=>{if(e.alpha==null||e.beta==null)return;const A=e.alpha*RAD,B=e.beta*RAD,cb=Math.cos(B);
+    ori={az:Math.atan2(cb*Math.sin(A),-Math.cos(A)*cb)/RAD,el:Math.asin(clamp(-Math.sin(B),-1,1))/RAD};});
+  function nose(){if(useOri&&ori)return ori;const gm=Math.hypot(grav[0],grav[1],grav[2])||1;return {az:yaw,el:Math.asin(clamp(-grav[1]/gm,-1,1))/RAD};}
+  function playHelp(){
+    if(ps==="cal")say("Setup: follow the TV","Pump at each target the TV shows, five in all. Flat for short ones, more air for deep ones. End each pump with the nose pointing at the target.");
+    else if(ps==="live")say("Live: pump to throw","Pump at your receiver. Harder pump, faster ball. Nose higher for a deeper throw.");
+    else if(ps==="pre")say("Hold it out, pull back to snap","Hold the ball still out in front of you, then pull it back quickly to snap.");
+    else say("Pull back for the next play","Check your grade on the TV, then hold still and pull back.");
+  }
+  function onMotion(e){
+    const now=performance.now(),dt=lastT?Math.min(0.1,(now-lastT)/1000):0;lastT=now;
+    const ag=e.accelerationIncludingGravity||{},a=e.acceleration||{},rr=e.rotationRate||{};let lin;
+    if(a.x!=null&&ag.x!=null){grav=[ag.x-a.x,ag.y-a.y,ag.z-a.z];lin=Math.hypot(a.x,a.y,a.z);}
+    else if(ag.x!=null){const v=[ag.x,ag.y,ag.z];grav=grav.map((q,i)=>q*0.92+v[i]*0.08);lin=Math.hypot(v[0]-grav[0],v[1]-grav[1],v[2]-grav[2]);}
+    else return;
+    const gm=Math.hypot(grav[0],grav[1],grav[2])||1,rot=Math.hypot(rr.alpha||0,rr.beta||0,rr.gamma||0);
+    yaw+=((rr.beta||0)*grav[0]+(rr.gamma||0)*grav[1]+(rr.alpha||0)*grav[2])/gm*dt;
+    if(!t0)t0=now;if(useOri===null&&now-t0>800)useOri=!!ori;
+    if(!ready||useOri===null)return;
+    const n=nose();
+    if(!buf.length||now-buf[buf.length-1][0]>=33){buf.push([now,lin,rot,n.az,n.el]);while(buf[0][0]<now-1400)buf.shift();}
+    if(now-lastSend>33&&!pump){lastSend=now;send({t:"a",az:n.az,el:n.el});}
+    if(now<mute)return;
+    if(ps==="live"||ps==="cal"){
+      // A pump: a hard push, then the stop. Aim is read when the ball comes to rest at the end of the pump.
+      if(!pump&&lin>12)pump={t0:now,peak:lin,tPeak:now};
+      else if(pump){if(lin>pump.peak){pump.peak=lin;pump.tPeak=now;}
+        if((now-pump.t0>110&&now-pump.tPeak>70&&lin<5&&rot<140)||now-pump.t0>600){
+          send({t:"throw",az:+n.az.toFixed(2),el:+n.el.toFixed(2),pk:+pump.peak.toFixed(1),ago:Math.round(now-pump.t0),tr:trace(pump.t0)});
+          $("cMeter").firstElementChild.style.width=Math.round(clamp((pump.peak-12)/30,0.05,1)*100)+"%";
+          if(navigator.vibrate)navigator.vibrate(60);pump=null;mute=now+800;}}
+    }else{
+      if(lin<2){still+=dt;if(still>0.35)stillAt=now;}else still=0;
+      if(lin>7&&now-stillAt<350){send({t:"snap",tr:trace(now)});stillAt=0;still=0;mute=now+650;if(navigator.vibrate)navigator.vibrate(30);}
+    }
+  }
+  $("cRecal").addEventListener("click",()=>send({t:"recal"}));
+  $("cWrong").addEventListener("click",()=>{send({t:"wrong"});for(let i=plog.length-1;i>=0;i--)if(plog[i].k==="throw"){plog[i].wrong=true;break;}$("cNote").textContent="Marked. That throw is flagged in the data.";});
+  $("cCopy").addEventListener("click",async()=>{const txt="Pocket Reads throw data v1. Claude: use this to tune how throws are read.\n"+JSON.stringify({v:1,phone:navigator.userAgent,sensor:useOri?"orientation":"gyro",log:plog});
+    const ok=await copyOut(txt,$("cBox"));$("cNote").textContent=ok?"Copied "+plog.length+" entries. Paste them into your chat with Claude.":"Select all the text in the box, copy it, and paste it to Claude.";});
+  $("cCenter").addEventListener("click",()=>{const n=nose();send({t:"center",az:n.az});});
+  $("cSnap").addEventListener("click",()=>send({t:"snap"}));
+  $("cGo").addEventListener("click",async()=>{
+    try{if(typeof DeviceMotionEvent==="undefined")throw new Error("none");
+      if(DeviceMotionEvent.requestPermission){const r=await DeviceMotionEvent.requestPermission();if(r!=="granted")throw new Error("denied");}
+      if(typeof DeviceOrientationEvent!=="undefined"&&DeviceOrientationEvent.requestPermission){try{await DeviceOrientationEvent.requestPermission();}catch(_){}}
+    }catch(_){say("Motion is blocked","Allow Motion and Orientation access for this site in the browser settings, then reload.");return;}
+    addEventListener("devicemotion",onMotion);$("cGo").hidden=true;say("Connecting...","");
+    try{if(navigator.wakeLock)navigator.wakeLock.request("screen").catch(()=>{});}catch(_){}
+    try{await loadJs(PEERJS);}catch(_){say("No connection","Could not load the connection library. Check the internet and reload.");return;}
+    const peer=new Peer();
+    peer.on("open",()=>{c=peer.connect("pocketreads-"+code);
+      c.on("open",()=>{ready=true;$("cPlay").hidden=false;playHelp();});
+      c.on("data",m=>{if(m&&m.t==="rl"){plog=m.log.slice();return;}if(m&&m.t==="r"){plog.push(m.e);if(plog.length>300)plog.shift();return;}if(m&&m.t==="s"){ps=m.s==="live"?"live":m.s==="pre"?"pre":m.s==="cal"?"cal":"done";pump=null;playHelp();}});
+      c.on("close",()=>{ready=false;say("Disconnected","Scan the code on the TV again.");});});
+    peer.on("error",e=>say("Could not connect","Check that the game is still open on the TV, then scan again. ("+(e.type||"")+")"));
+  });
+}
+if(!(PHONE&&code)){newPlay();requestAnimationFrame(loop);if(location.hash==="#training")tab("train");}
+</script>
+</body>
+</html>
