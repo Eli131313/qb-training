@@ -330,10 +330,13 @@ kbd{
   <div class="card" id="setCard" hidden style="margin:10px 0">
     <h2>Settings</h2>
     <div class="setgrid">
+      <div><div class="setlab">Defense</div>
+        <div class="row seg" id="diffSeg"><button data-d="0">Easy</button><button data-d="1">Medium</button><button data-d="2">Hard</button></div>
+        <p class="dimtxt" id="diffNote"></p></div>
       <div><div class="setlab">Pass protection</div>
         <div class="row"><label for="bMin">Rush gets home after at least</label><input type="range" id="bMin" min="1.5" max="6.5" step="0.1"><b id="bMinV"></b></div>
         <div class="row"><label for="bMax">and at most</label><input type="range" id="bMax" min="1.8" max="7" step="0.1"><b id="bMaxV"></b></div>
-        <p class="dimtxt">Every snap picks a random time in this window. An all-out blitz comes at the short end.</p></div>
+        <p class="dimtxt">Every snap picks a random time in this window for a four-man rush. Five and six-man pressure gets home faster, a three-man rush slower.</p></div>
       <div><div class="setlab">Camera height</div>
         <div class="row seg" id="camSeg"><button data-c="0">High</button><button data-c="1">Mid</button><button data-c="2">Low</button></div>
         <p class="dimtxt">Lower views look over your linemen like a real quarterback. If aiming feels off after a change, run New player setup.</p></div>
@@ -347,7 +350,7 @@ kbd{
     </div>
   </div>
   <div class="card" id="trainBar" hidden style="margin:10px 0"><h2>Throw training</h2><p id="trainMsg" style="font-weight:600;margin:0">Throw to the receiver marked in green.</p><p class="dimtxt" style="margin:6px 0 0">No defense here. Snap, then pump at the green receiver, leading him if he is moving. Every throw is saved with who you meant to hit, and the aim model re-fits itself to your motion as you go. Do as many as you like, then use Copy throw data.</p></div>
-  <p class="dimtxt" id="simHelp">Drive the field. Routes show before the snap and disappear at the snap. Read the safeties, then throw by tapping a receiver (or pump the football phone). You get 3 downs to make a first down, 4 inside the opponent's 35. Sacks lose yards. An interception or a turnover on downs ends the game. <kbd>Space</kbd> snaps and loads the next play, <kbd>N</kbd> picks a different play before the snap.</p>
+  <p class="dimtxt" id="simHelp">Drive the field. Routes show before the snap and disappear at the snap. Read the safeties, then throw by tapping a receiver (or pump the football phone). You get 3 downs to make a first down, 4 inside the opponent's 35. Sacks lose yards. An interception or a turnover on downs ends the game. <kbd>Space</kbd> snaps and loads the next play, <kbd>N</kbd> picks a different play before the snap. If nobody is open, throw it away: press <kbd>T</kbd>, tap an empty part of the field, or pump the football at the sideline. Throwing into double coverage is always intercepted.</p>
   <div class="card" id="linkCard" hidden>
     <h2>Phone as the football</h2>
     <div id="link">
@@ -401,7 +404,7 @@ const $=id=>document.getElementById(id);
 const W=1280,H=720,K=520; // logical canvas size and panoramic lens strength
 const CAMS=[{h:5.2,y:-8,hor:185},{h:3.8,y:-8.2,hor:228},{h:3.0,y:-8.4,hor:258}]; // high, mid, low quarterback cameras
 let HOR=185,PX=1,frameN=0,fieldCv=null,fieldKey="";const CAM={y:-8,h:5.2};
-const SET={bmin:2.2,bmax:4.1,cam:0,crowd:true,sfx:true,vol:0.8};
+const SET={bmin:2.2,bmax:4.1,cam:0,crowd:true,sfx:true,vol:0.8,diff:0};
 try{Object.assign(SET,JSON.parse(localStorage.getItem("pocketreads_settings_v1")||"{}"));}catch(_){}
 function saveSet(){try{localStorage.setItem("pocketreads_settings_v1",JSON.stringify(SET));}catch(_){}}
 function applyCam(){const c=CAMS[SET.cam]||CAMS[0];CAM.h=c.h;CAM.y=c.y;HOR=c.hor;fieldKey="";}
@@ -423,13 +426,36 @@ const PLAYS=[
  {name:"Dagger",r:{X:{p:[[-16,14],[5,15.5]],c:1},H:{p:[[-6.5,40]]},Y:{p:[[6,3],[-12,5.5]]},Z:{p:[[16,15],[19.5,11.5]]},R:{p:[[2,3.5]]}}}
 ];
 const ROLES=["X","H","Y","Z","R"];
+/* ---------- the defense: a college call sheet ----------
+   Back seven, before the random left/right flip: 0 left corner, 1 right corner, 2 nickel (left apex),
+   3 Will linebacker (right apex), 4 Mike linebacker, 5 free safety, 6 strong safety.
+   Index 7 is a defensive lineman who drops into coverage on a simulated pressure, fire zone or drop 8.
+   Receivers: 0 X (left #1), 1 H (left #2), 2 Y (right #2), 3 Z (right #1), 4 R (back). */
+const DIFF=[
+ {name:"Easy",lag:0.22,close:0.8,spd:1.0,react:0.24,rally:0.7,brk:0.5,grab:0.92,rad:1.0,disg:0.25,mug:0.15,win:[2,4],maxLen:1.6,minRec:2,zero:0},
+ {name:"Medium",lag:0.14,close:0.9,spd:1.02,react:0.16,rally:0.45,brk:0.36,grab:0.96,rad:1.1,disg:0.5,mug:0.3,win:[2,3],maxLen:0.8,minRec:2,zero:0},
+ {name:"Hard",lag:0.07,close:1.0,spd:1.035,react:0.09,rally:0.25,brk:0.32,grab:0.99,rad:1.2,disg:0.7,mug:0.45,win:[1,2],maxLen:0.45,minRec:1,zero:0.3}
+];
+const dset=()=>DIFF[clamp(SET.diff|0,0,2)];
 const COV={
- C3:{name:"Cover 3",shell:"one",note:"Three deep, four under. Look for the seams between the deep thirds and the curl and flat areas outside."},
- C2:{name:"Cover 2",shell:"two",note:"Two deep safeties with corners squatting in the flats. The soft spots are the sideline hole behind the corner and the deep middle."},
- C1:{name:"Cover 1 (man)",shell:"one",note:"Man coverage with one deep safety. Crossers, rubs and breaks away from leverage win. Corners pressing is a tell."},
- C4:{name:"Cover 4 (quarters)",shell:"two",note:"Four deep takes away the verticals. The underneath and flat routes come open, so take the easy completion."},
- C0:{name:"Cover 0 blitz",shell:"two",note:"All-out man with no deep help and extra rushers. The ball has to be out fast, usually to a quick breaker."}
+ C3S:{name:"Cover 3 Sky",shell:"one",rush:4,fam:"3",note:"Three deep, four under, the strong safety rolls to the flat. Hit the seams between the deep thirds or the curl-flat window before the flat defender widens."},
+ C3B:{name:"Cover 3 Buzz",shell:"one",rush:4,fam:"3",note:"Single high with the strong safety buzzing to the hook. The flat is soft early and the curl behind the Will opens late."},
+ C3M:{name:"Cover 3 Match (Rip/Liz)",shell:"one",rush:4,fam:"3",note:"Pattern-matched Cover 3: corners carry #1 vertical and the curl-flat players carry #2 up the seam, so it plays like man on verticals. Throw the out-breaking route away from the match."},
+ C2:{name:"Cover 2",shell:"two",rush:4,fam:"2",note:"Two deep halves with the corners squatting in the flats. Throw the hole behind the corner and in front of the safety, or split the safeties."},
+ T2:{name:"Tampa 2",shell:"two",rush:4,fam:"2",note:"Cover 2 with the Mike running the deep middle. The seams close fast, so work the dig behind the outside backers or the hole on the sideline."},
+ C2M:{name:"Cover 2 Man",shell:"two",rush:4,fam:"2",note:"Two deep, five underneath in trail man. Underneath is tight, so beat it with crossers and breaks away from the trail defender, never throw over the top."},
+ C1R:{name:"Cover 1 Robber",shell:"one",rush:4,fam:"1",note:"Man free with a robber sitting in the middle hole. Win outside on a break or go deep away from the free safety, stay off the dig."},
+ C1B:{name:"Cover 1 Blitz",shell:"one",rush:5,fam:"1",note:"Man with one deep safety and a fifth rusher. The ball must come out on time to whoever wins his route."},
+ C0:{name:"Cover 0",shell:"zero",rush:6,fam:"0",note:"All-out man pressure, nobody deep and more rushers than blockers. Throw hot right now to the first man who wins."},
+ C4:{name:"Cover 4 Quarters",shell:"two",rush:4,fam:"4",note:"Quarters match: safeties read #2 and carry him vertical. The flats and the quick stuff underneath are where the windows are."},
+ PLM:{name:"Palms (2-Read)",shell:"two",rush:4,fam:"4",note:"Corners read #2: if he goes to the flat the corner jumps him and the safety takes #1. Look for #1 against the safety or the void behind the jumping corner."},
+ C6:{name:"Cover 6",shell:"two",rush:4,fam:"6",note:"Quarter-quarter-half: quarters to one side, a cloud corner and a half safety to the other. Find the cloud side hole between the corner and the half safety."},
+ FZ:{name:"Fire Zone",shell:"one",rush:5,fam:"FZ",note:"Five-man zone pressure with three under and three deep. A lineman drops into the flat. The hot window is the seam and hook area the blitzers left."},
+ CR:{name:"Creeper",shell:"one",rush:4,fam:"FZ",note:"Simulated pressure: four rushers, but a backer comes and a lineman drops. It looks like a blitz, so do not panic, read the dropping lineman's zone."},
+ D8:{name:"Drop 8",shell:"one",rush:3,fam:"3",note:"Three-man rush and eight in coverage. Everything is crowded, so be patient, the pocket will hold and a window opens late."}
 };
+const CALLS=["C3S","C3S","C3B","C3M","C3M","C2","T2","C2M","C1R","C1B","C0","C4","C4","PLM","C6","C6","FZ","CR","D8"];
+const DL0=[[-4.9,0.85],[-1.0,0.8],[1.0,0.8],[4.9,0.85]];
 const SPD=7.2;
 function routePos(role,play,t){
   const s=START[role],r=play.r[role];
@@ -439,56 +465,166 @@ function routePos(role,play,t){
     return [clamp(x+(b[0]-a[0])/L*d,-25,25),clamp(y+(b[1]-a[1])/L*d,-6,45)];}
   return [x,y];
 }
-function buildPlay(noDef){
-  const play=PLAYS[Math.floor(Math.random()*PLAYS.length)];
-  const ck=["C3","C3","C2","C2","C1","C1","C4","C0"][Math.floor(Math.random()*8)],cov=COV[ck];
-  const flip=Math.random()<0.5?-1:1;
-  const shell=Math.random()<0.3?(cov.shell==="one"?"two":"one"):cov.shell;
-  const press=(ck==="C1"||ck==="C0")&&Math.random()<0.65;
-  const man=r=>({man:ROLES.indexOf(r)}),deep=(x,w)=>({deep:x,w}),und=(x,y,r=6.5)=>({ux:x,uy:y,r});
-  const S=shell==="two"?[[-10,13],[10,13]]:(cov.shell==="two"?[[-2,14],[8,10]]:[[0,14],[9,7]]);
-  const D=[{x:-16,y:press?1.8:6.5},{x:16,y:press?1.8:6.5},{x:-7,y:4.5},{x:7,y:4.5},{x:0,y:5},{x:S[0][0],y:S[0][1]},{x:S[1][0],y:S[1][1]}];
-  const J={
-   C3:[deep(-17,9),deep(17,9),und(-14,7),und(4.5,9),und(-4.5,9),deep(0,8.5),und(14,7)],
-   C2:[und(-17,5,5.5),und(17,5,5.5),und(-8,9),und(8,9),und(0,11),deep(-13,13.5),deep(13,13.5)],
-   C1:[man("X"),man("Z"),man("H"),man("Y"),man("R"),deep(0,27),und(0,8)],
-   C4:[deep(-17,7.5),deep(17,7.5),und(-12,6),und(12,6),und(0,7),deep(-6.5,7),deep(6.5,7)],
-   C0:[man("X"),man("Z"),man("H"),man("Y"),man("R"),{rush:1},{rush:1}]
+// one assignment table per call
+function callJ(ck){
+  const man=r=>({man:r}),deep=(x,w,b)=>({deep:x,w,b:b||14}),und=(x,y,r)=>({ux:x,uy:y,r:r||6.5}),rush={rush:1};
+  const m1=(r,x)=>({m1:r,deep:x,w:9,b:14}),m2=(r,x,y)=>({m2:r,ux:x,uy:y,r:6}),qs=(r2,r1,x)=>({qs:r2,r1,deep:x,w:7,b:12});
+  const palm=(r2,r1,x)=>({palm:r2,r1,deep:x,w:7,b:12});
+  return {
+   C3S:[deep(-17,9),deep(17,9),und(-14,6),und(5,9),und(-4.5,9),deep(0,8.5,15),und(14,6)],
+   C3B:[deep(-17,9),deep(17,9),und(-14,6),und(14,6),und(-4.5,9),deep(0,8.5,15),und(5,9)],
+   C3M:[m1(0,-17),m1(3,17),m2(1,-13,6),und(5,9),und(-4.5,9),deep(0,8.5,15),m2(2,13,6)],
+   C2:[und(-17,4.5,5.5),und(17,4.5,5.5),und(-9,9),und(9,9),und(0,11),deep(-13,13.5,13),deep(13,13.5,13)],
+   T2:[und(-17,4.5,5.5),und(17,4.5,5.5),und(-11,9),und(11,9),deep(0,6,15),deep(-14,12,13),deep(14,12,13)],
+   C2M:[man(0),man(3),man(1),man(2),man(4),deep(-13,13.5,13),deep(13,13.5,13)],
+   C1R:[man(0),man(3),man(1),man(4),und(0,9,7),deep(0,27,15),man(2)],
+   C1B:[man(0),man(3),man(1),rush,man(4),deep(0,27,15),man(2)],
+   C0:[man(0),man(3),man(1),man(2),rush,rush,man(4)],
+   C4:[deep(-17,7.5,12),deep(17,7.5,12),und(-12,6),und(12,6),und(0,7.5),qs(1,0,-7),qs(2,3,7)],
+   PLM:[palm(1,0,-16),palm(2,3,16),und(-9,8),und(9,8),und(0,7.5),qs(1,0,-7),qs(2,3,7)],
+   C6:[deep(-17,7.5,12),und(17,4.5,5.5),und(-12,6),und(9,9),und(0,9),qs(1,0,-7),deep(13,13.5,13)],
+   FZ:[deep(-17,9),deep(17,9),rush,und(0,9,7),rush,deep(0,8.5,15),und(14,6),und(-12,5.5)],
+   CR:[deep(-17,9),deep(17,9),und(-14,6),und(-4,9),rush,deep(0,8.5,15),und(14,6),und(5,7.5)],
+   D8:[deep(-17,9),deep(17,9),und(-14,6),und(6,9),und(-6,9),deep(0,8.5,15),und(14,6),und(0,5,6)]
   }[ck];
-  if(noDef)D.length=0;
-  const sack=noDef?99:ck==="C0"?rnd(SET.bmin,Math.min(SET.bmax,SET.bmin+0.6)):rnd(SET.bmin,SET.bmax);
-  const endY=110-(noDef?35:DRIVE.ballOn)-0.8; // receivers stay inside the back line of the end zone // time until the rush gets home, different every snap
-  const frames=[];
+}
+const DROPDL={FZ:0,CR:3,D8:1};
+const REL=0.8; // earliest the ball can come out: the quarterback has to finish his drop
+// when each route breaks (a sharp cut, or a receiver throttling down to sit): the moment a defender loses a step
+function breaksOf(play){return ROLES.map(R=>{const s=START[R],rt=play.r[R],out=[];let x=s[0],y=s[1],d=0,ph=null;
+  rt.p.forEach(([px,py],k)=>{const h=Math.atan2(py-y,px-x);if(ph!==null){let a=Math.abs(h-ph);if(a>Math.PI)a=2*Math.PI-a;if(a>0.6)out.push(d/SPD+0.25);}
+    d+=Math.hypot(px-x,py-y);x=px;y=py;ph=h;});
+  if(!rt.c)out.push(d/SPD+0.25);return out;});}
+function simDefense(play,ck,o){
+  const DF=dset(),J=callJ(ck),cov=COV[ck],flip=o.flip;o.back={T2:3,FZ:3,CR:7,D8:7}[ck];if(o.back===undefined)o.back=J[4].ux!==undefined?4:-1;
+  // pre-snap picture: what the quarterback sees, which may not be what they play
+  const realShell=cov.shell,shown=o.shown;
+  const press=o.press;
+  const S=shown==="two"?[[-10.5,13],[10.5,13]]:shown==="one"?[[0,14],[9,7.5]]:[[-3,9],[8,6.5]];
+  const cy=press?1.8:shown==="two"&&cov.fam==="2"?5:6.5;
+  const D=[{x:-16,y:cy},{x:16,y:cy},{x:-7.5,y:4.5},{x:7.5,y:4.5},{x:0,y:5},{x:S[0][0],y:S[0][1]},{x:S[1][0],y:S[1][1]}];
+  if(o.mug){D[4].x=-1.2;D[4].y=1.5;D[3].x=2.0;D[3].y=1.6;} // walked up in the A gaps showing blitz
+  const drop=DROPDL[ck]!==undefined?DROPDL[ck]:-1;
+  if(drop>=0)D.push({x:DL0[drop][0],y:DL0[drop][1]});
+  D.forEach(d=>{d.x0=d.x;d.y0=d.y;d.mt=-1;d.rl=-1;});const alone=[0,0,0,0,0];
+  const rushers=[];J.forEach((j,i)=>{if(j&&j.rush)rushers.push(i);});
+  const nRush=4-(drop>=0?1:0)+rushers.length;
+  const mult={3:1.3,4:1,5:0.8,6:0.64}[nRush]||1;
+  const sack=Math.max(1.35,rnd(SET.bmin,SET.bmax)*mult);
+  const ub=nRush>=6?rushers[Math.floor(Math.random()*rushers.length)]:-1; // more rushers than blockers: one comes clean
+  const lag=ck==="C2M"?DF.lag*0.8:DF.lag,sm=DF.spd;
+  const endY=o.endY,frames=[],BRK=breaksOf(play);
   for(let k=0;k<N;k++){
-    const t=k/FPS, r=ROLES.map(R=>routePos(R,play,t)), rl=ROLES.map(R=>routePos(R,play,Math.max(0,t-0.27)));
-    if(k>0) D.forEach((d,i)=>{
-      const j=J[i];let tx=d.x,ty=d.y,sp=6.3;
-      if(j.rush){tx=0;ty=-6;sp=7;}
-      else if(j.man!==undefined){tx=rl[j.man][0];ty=rl[j.man][1]-0.2;sp=7.0;}
-      else if(t<0.25){sp=0;}
-      else if(j.deep!==undefined){
-        const base=Math.min(14+t*2,22);let th=null;
-        r.forEach(p=>{if(Math.abs(p[0]-j.deep)<=j.w&&p[1]>6&&(!th||p[1]>th[1]))th=p;});
-        tx=th?j.deep+(th[0]-j.deep)*0.7:j.deep;ty=th?Math.max(base,th[1]+2.5):base;sp=7.3;
-      }else{
-        let best=null,bd=j.r;
-        rl.forEach(p=>{const dd=Math.hypot(p[0]-j.ux,p[1]-j.uy);if(dd<bd&&p[1]>-1){bd=dd;best=p;}});
-        tx=best?best[0]*0.8+j.ux*0.2:j.ux;ty=best?best[1]*0.8+j.uy*0.2+0.3:j.uy;
+    const t=k/FPS,r=ROLES.map(R=>routePos(R,play,t)),rl=ROLES.map((R,ri)=>{let ex=0;BRK[ri].forEach(tb=>{const x=t-tb;if(x>0)ex=Math.max(ex,x<0.15?x/0.15:Math.max(0,1-(x-0.15)/0.6));});
+      return routePos(R,play,Math.max(0,t-lag-ex*DF.brk));});
+    if(k>0&&t>=DF.react){ // zone match: each underneath defender takes a different receiver who enters his area
+      const taken=new Set(),ZD=[];
+      D.forEach((d,i)=>{const j=J[i];if(j&&j.ux!==undefined&&!(d.mode&&d.mode.man!==undefined))ZD.push(i);});
+      ZD.forEach(i=>{const d=D[i],j=J[i];if(d.mt>=0&&Math.hypot(rl[d.mt][0]-j.ux,rl[d.mt][1]-j.uy)<j.r*DF.rad*1.35&&rl[d.mt][1]<j.uy+8&&!taken.has(d.mt))taken.add(d.mt);else d.mt=-1;});
+      const cand=[];ZD.forEach(i=>{if(D[i].mt>=0)return;const j=J[i];rl.forEach((p,ri)=>{const dd=Math.hypot(p[0]-j.ux,p[1]-j.uy);if(dd<j.r*DF.rad&&p[1]>-1&&p[1]<j.uy+7)cand.push([dd,i,ri]);});});
+      cand.sort((a,b)=>a[0]-b[0]).forEach(([dd,i,ri])=>{if(D[i].mt>=0||taken.has(ri))return;D[i].mt=ri;taken.add(ri);});
+    }
+    if(k>0&&t>=DF.react){ // eyes on the quarterback: a receiver left alone too long gets rallied to
+      r.forEach((p,ri)=>{let nd=99;D.forEach((d,i)=>{if(!J[i].rush)nd=Math.min(nd,Math.hypot(d.x-p[0],d.y-p[1]));});
+        alone[ri]=nd>2.2&&p[1]>-2?alone[ri]+1/FPS:0;});
+      D.forEach(d=>{if(d.rl>=0){const p=r[d.rl];if(Math.hypot(d.x-p[0],d.y-p[1])<1.6){d.mode={man:d.rl};d.rl=-1;}}});
+      r.forEach((p,ri)=>{if(alone[ri]<DF.rally||D.some(d=>d.rl===ri))return;let bi=-1,bd=99;
+        D.forEach((d,i)=>{const j=J[i];if(j.rush||i===o.back||j.man!==undefined||(d.mode&&d.mode.man!==undefined)||d.rl>=0)return;
+          if(j.deep!==undefined&&!(d.mode&&d.mode.help!==undefined)&&p[1]<9)return;
+          const dd=Math.hypot(d.x-p[0],d.y-p[1]);if(j.ux!==undefined&&(dd>10||p[1]>j.uy+9))return;if(dd<bd&&dd<16){bd=dd;bi=i;}});
+        if(bi>=0)D[bi].rl=ri;});
+    }
+    if(k>0)D.forEach((d,i)=>{
+      const j=J[i];let tx=d.x,ty=d.y,sp=6.3*sm;
+      const away=Math.hypot(d.x0-(j.deep!==undefined?j.deep:j.ux!==undefined?j.ux:d.x0),d.y0-(j.b||j.uy||d.y0))>5;
+      const rushStep=()=>{const side=d.x0<0?-1:1;
+        if(i===ub){const u=clamp(t/sack,0,1);tx=d.x0*(1-u)+side*0.6*u;ty=d.y0+(CAM.y+3.0-d.y0)*u*u*(3-2*u);sp=99;}
+        else{const eg=[side*(Math.abs(d.x0)>4?5.0:1.1),-1.75];tx=eg[0]+Math.sin(t*6+i)*0.12;ty=eg[1]+Math.cos(t*5+i)*0.08;sp=7.2;}
+      };
+      if(!j.rush&&i===o.back&&!(d.mode&&d.mode.man!==undefined)&&t>0.3&&Math.hypot(r[4][0]-START.R[0],r[4][1]-START.R[1])>1.5){d.mode={man:4};d.rl=-1;} // he has the back out of the backfield
+      if(j.rush)rushStep();
+      else if(d.rl>=0){const p=r[d.rl];tx=p[0];ty=p[1]+0.3;sp=7.3*sm;}
+      else if(j.man!==undefined){tx=rl[j.man][0];ty=rl[j.man][1]-0.2;sp=7.0*sm;if(t<0.15)sp=3;}
+      else if(t<DF.react&&!away&&!(i===7)){sp=0;}
+      else{
+        // pattern-match reads: decide once, then play it
+        if(d.mode===undefined&&t>=0.75){
+          if(j.m1!==undefined){d.mode=r[j.m1][1]>7?{man:j.m1}:0;}
+          else if(j.m2!==undefined){d.mode=r[j.m2][1]>8?{man:j.m2}:0;}
+          else if(j.qs!==undefined){d.mode=r[j.qs][1]>8?{man:j.qs}:{help:j.r1};}
+          else if(j.palm!==undefined){const p2=r[j.palm];d.mode=(p2[1]<6&&Math.abs(p2[0])>Math.abs(START[ROLES[j.palm]][0])+2)?{man:j.palm}:{man:j.r1};}
+        }
+        if(d.mode&&d.mode.man!==undefined){tx=rl[d.mode.man][0];ty=rl[d.mode.man][1]-(j.palm!==undefined||j.qs!==undefined?-0.6:0.2);sp=7.0*sm;}
+        else if(d.mode&&d.mode.help!==undefined){const p=r[d.mode.help];tx=j.deep*0.5+p[0]*0.5;ty=Math.max(p[1]+3,12);sp=7.2*sm;}
+        else if(j.deep!==undefined){
+          const base=Math.min(j.b+t*2,22);let th=null;
+          r.forEach(p=>{if(Math.abs(p[0]-j.deep)<=j.w&&p[1]>6&&(!th||p[1]>th[1]))th=p;});
+          tx=th?j.deep+(th[0]-j.deep)*0.72:j.deep;ty=th?Math.max(base,th[1]+2.2):base;sp=7.3*sm;
+        }else{
+          const best=d.mt>=0?rl[d.mt]:null,gw=DF.grab;
+          tx=best?best[0]*gw+j.ux*(1-gw):j.ux;ty=best?best[1]*gw+j.uy*(1-gw)+0.25:j.uy;sp=(best?6.9:6.4)*sm;
+        }
       }
+      if(away&&!j.rush)sp*=1.12; // rotating defenders are already moving at the snap
       const dx=tx-d.x,dy=ty-d.y,L=Math.hypot(dx,dy),st=sp/FPS;
       if(L>0.01){const k2=Math.min(1,st/L);d.x+=dx*k2;d.y+=dy*k2;}
     });
     frames.push({r:r.map(p=>[p[0]*flip,Math.min(p[1],endY)]),d:D.map(d=>[d.x*flip,Math.min(d.y,endY+0.6)])});
   }
-  // number receivers left to right
-  const order=[0,1,2,3,4].sort((a,b)=>frames[0].r[a][0]-frames[0].r[b][0]);
-  frames.forEach(f=>{f.r=order.map(i=>f.r[i]);});
-  const P={play,cov,ck,shell,frames,sack,disguised:shell!==cov.shell};
-  const f1=Math.floor(Math.random()*4);P.line={free:Math.random()<0.4?[f1,(f1+1+Math.floor(Math.random()*3))%4]:[f1],tFree:Math.max(0.6,sack-rnd(0.65,0.95))};
-  // find best read
+  return {frames,sack,nRush,rushers,ub,drop,mug:o.mug};
+}
+// how many windows does this play give the quarterback, and how long is each one open
+function windowsOf(P){
+  const ws=[],end=Math.min(P.sack,T)-0.05;
+  for(let i=0;i<5;i++){let run=0,st=0;
+    for(let t=REL;t<=end+1e-6;t+=0.05){const e=evalThrow(P,i,t),ok=e.sep>=0.9&&!doubled(P,e);
+      if(ok){if(!run)st=t;run++;}
+      if((!ok||t+0.05>end)&&run){if(run>=3)ws.push({i,t0:st,len:run*0.05});run=0;}}}
+  return ws;
+}
+function doubled(P,e){const f=fr(P,e.ta);let n=0;
+  f.d.forEach((d,j)=>{if(P.rushers.includes(j))return;if(Math.hypot(d[0]-e.p[0],d[1]-e.p[1])<2.3)n++;});return n>=2;}
+function buildPlay(noDef){
+  const DF=dset(),endY=110-(noDef?35:DRIVE.ballOn)-0.8;
+  if(noDef){ // throw training: routes only
+    const play=PLAYS[Math.floor(Math.random()*PLAYS.length)],flip=Math.random()<0.5?-1:1,frames=[];
+    for(let k=0;k<N;k++){const t=k/FPS;frames.push({r:ROLES.map(R=>{const p=routePos(R,play,t);return [p[0]*flip,Math.min(p[1],endY)];}),d:[]});}
+    const order=[0,1,2,3,4].sort((a,b)=>frames[0].r[a][0]-frames[0].r[b][0]);frames.forEach(f=>{f.r=order.map(i=>f.r[i]);});
+    return {play,cov:COV.C3S,ck:"none",shell:"one",frames,sack:99,disguised:false,rushers:[],drop:-1,ub:-1,nRush:0,dn:DN.slice(),line:{free:[],tFree:99},best:{ev:-99,i:0,t:1,sep:0,p:[0,5]},bestFor:[],wins:[]};
+  }
+  const lo=DF.win[0],hi=DF.win[1],zero=Math.random()<DF.zero;
+  let pickP=null,pickS=1e9;
+  let ck=CALLS[Math.floor(Math.random()*CALLS.length)],callBest=1e9;
+  for(let tr=0;tr<56;tr++){
+    if(tr>0&&tr%8===0){if(pickS<=1.2)break;ck=CALLS[Math.floor(Math.random()*CALLS.length)];} // this call cannot hit the target here: the coordinator calls something else
+    const play=PLAYS[Math.floor(Math.random()*PLAYS.length)],cov=COV[ck];
+    const real=cov.shell==="zero"?"one":cov.shell;
+    const disg=Math.random()<DF.disg;
+    const shown=cov.shell==="zero"?(Math.random()<0.6?"two":"one"):disg?(real==="one"?"two":"one"):real;
+    const press=cov.fam==="1"||cov.fam==="0"?Math.random()<0.7:Math.random()<0.2*(1+DF.disg);
+    const sim=simDefense(play,ck,{flip:Math.random()<0.5?-1:1,shown,press,mug:cov.rush>=5||ck==="CR"?Math.random()<0.75:Math.random()<DF.mug,endY});
+    const frames=sim.frames,order=[0,1,2,3,4].sort((a,b)=>frames[0].r[a][0]-frames[0].r[b][0]);
+    frames.forEach(f=>{f.r=order.map(i=>f.r[i]);});
+    const P={play,cov,ck,shell:shown,frames,sack:sim.sack,disguised:shown!==real,rushers:sim.rushers,drop:sim.drop,ub:sim.ub,nRush:sim.nRush,mug:sim.mug};
+    P.wins=windowsOf(P);
+    const n=P.wins.length,rec=new Set(P.wins.map(w=>w.i)).size,mx=Math.max(0,...P.wins.map(w=>w.len));
+    let s=0;
+    if(zero)s+=n*2;else{s+=n<lo?(lo-n)*2:n>hi?(n-hi)*2:0;s+=rec<Math.min(DF.minRec,n)?1:0;}
+    P.wins.forEach(w=>{s+=Math.max(0,w.len-DF.maxLen)*2.5;});
+    s+=mx>1.6?3:0; // never one receiver wide open for the whole play
+    if(n&&P.wins.every(w=>w.t0<1.15))s+=P.nRush>=6?0.6:1;
+    if(n>=2&&P.wins.filter(w=>w.t0<1.0).length>=2)s+=1; // not everything open on the first look // against a normal rush, make him work a progression, not just the first look
+    if(s<pickS){pickS=s;pickP=P;}
+    if(s===0)break;
+  }
+  const P=pickP;
+  P.dn=DN.slice();if(P.drop>=0)P.dn.push(String(91+P.drop));
+  const dl=[0,1,2,3].filter(j=>j!==P.drop),f1=dl[Math.floor(Math.random()*dl.length)];
+  const more=P.nRush===5&&Math.random()<0.5;
+  P.line={free:P.ub>=0?[]:more?[f1,dl.filter(j=>j!==f1)[Math.floor(Math.random()*(dl.length-1))]]:[f1],tFree:Math.max(0.6,P.sack-rnd(0.65,0.95))};
   P.best={ev:-99};P.bestFor=[];
   for(let i=0;i<5;i++){let b={ev:-99};
-    for(let t=0.7;t<Math.min(sack,T)-0.05;t+=0.1){const e=evalThrow(P,i,t);if(e.ev>b.ev)b=e;}
+    for(let t=REL;t<Math.min(P.sack,T)-0.05;t+=0.1){const e=evalThrow(P,i,t);if(doubled(P,e))e.ev-=20;if(e.ev>b.ev)b=e;}
     P.bestFor.push(b);if(b.ev>P.best.ev)P.best=b;}
   return P;
 }
@@ -498,8 +634,8 @@ function evalThrow(P,i,t,spd){spd=spd||22;
   for(let k=0;k<3;k++){ta=Math.min(t+ft,T-0.04);p=fr(P,ta).r[i];ft=0.3+Math.hypot(p[0],p[1]+7)/spd;}
   ta=Math.min(t+ft,T-0.04);const f=fr(P,ta);p=f.r[i];
   let sep=99;f.d.forEach(d=>{sep=Math.min(sep,Math.hypot(d[0]-p[0],d[1]-p[1]));});
-  const se=sep-0.9*ft, pc=clamp((se-0.4)/2.6,0.03,0.95)*(1-clamp((Math.hypot(p[0],p[1]+7)-22)/40,0,0.55)), pi=se<1.2?clamp(0.3*(1.2-se),0,0.4):0.01;
-  const air=Math.hypot(p[0],p[1]+7), yards=p[1]+clamp(se,0,5);
+  const se=sep-(P.ck==='none'?0.9:dset().close)*ft, pc=clamp((se-0.4)/2.6,0.03,0.95)*(1-clamp((Math.hypot(p[0],p[1]+7)-22)/40,0,0.55)), pi=se<1.2?clamp(0.3*(1.2-se),0,0.4):0.01;
+  const yards=p[1]+clamp(se,0,5);
   return {i,t,ta,ft,sep:se,p,ev:pc*yards-pi*20,yards};
 }
 
@@ -1568,6 +1704,7 @@ function pocketNow(tl){
     return [s[0]+(gx-s[0])*set+fight*0.5,s[1]+(gy-s[1])*set+Math.abs(fight)*0.35];});
   const DL0=[[-4.9,0.85],[-1.0,0.8],[1.0,0.8],[4.9,0.85]],tE=clamp((tl-0.1)/0.42,0,1),eE=tE*tE*(3-2*tE),dl=[];let threat=0;
   for(let j=0;j<4;j++){
+    if(P.drop===j)continue; // this lineman dropped into coverage
     const o=ol[BLK[j]],side=j<2?-1:1,edge=j===0||j===3;
     const eng=[o[0]+side*(edge?0.5:-0.12)+Math.sin(tl*6.1+j)*0.1,o[1]+0.92+Math.cos(tl*5.3+j*2)*0.07];
     let x=DL0[j][0]+(eng[0]-DL0[j][0])*eE,y=DL0[j][1]+(eng[1]-DL0[j][1])*eE,free=0;
@@ -1580,6 +1717,7 @@ function pocketNow(tl){
     }
     dl.push({x,y,free,j,side,hit:L.free.length>1?(j===L.free[0]?-1:1):side});
   }
+  if(!train&&P.ub>=0)threat=Math.max(threat,clamp((tl-(P.sack-1.1))/1.1,0,1)); // the unblocked blitzer
   return {ol,dl,threat,beaten};
 }
 
@@ -1617,7 +1755,8 @@ function draw(){
 
   const shaking=now<shakeUntil;
   const snapJolt=state==="live"&&now-_vSnapAt<220?Math.sin((now-_vSnapAt)/220*Math.PI*2.5)*4*(1-(now-_vSnapAt)/220):0;
-  if(shaking||snapJolt){g.save();g.translate(shaking?rnd(-12,12):0,(shaking?rnd(-10,10):0)+snapJolt);}
+  const shA=shaking?13*Math.pow((shakeUntil-now)/650,2):0;
+  if(shaking||snapJolt){g.save();g.translate(shaking?rnd(-shA,shA):0,(shaking?rnd(-shA*0.8,shA*0.8)+shA*0.5:0)+snapJolt);}
 
   drawField();
 
@@ -1674,7 +1813,7 @@ function draw(){
     }
     const isFacingQB=front||state==="pre"||isBackpedal||(res&&state!=="live"&&Math.hypot(d[0]-res.p[0],d[1]-res.p[1])<4.5);
     const lean=state==="pre"?0:clamp(vx*0.034,-0.24,0.24);
-    const opts={n:DN[j],front:isFacingQB?1:0,backpedal:isBackpedal&&!reach,stance:state==="pre"&&(j===3||j===4),lean,reach,reachX,look:clamp(-x*0.04,-1,1),run:jz>0?0:runPhase(d,d0,j)};
+    const opts={n:(P.dn||DN)[j]||"9",front:isFacingQB?1:0,backpedal:isBackpedal&&!reach,stance:state==="pre"&&(j===3||j===4),lean,reach,reachX,look:clamp(-x*0.04,-1,1),run:jz>0?0:runPhase(d,d0,j)};
     if(jz>0){const pf=proj(x,y,jz),ph=proj(x,y,jz+2);if(pf&&ph)opts.scr={x:pf.x,y:pf.y,u:pf.y-ph.y};}
     items.push({y,fn:()=>fig(x,y,1,opts)});
   });
@@ -1744,8 +1883,8 @@ function draw(){
       if(kF>0.03){g.save();for(let s=1;s<=12;s++){const u0=Math.max(0,kF-s*0.018),u1=Math.max(0,kF-(s-1)*0.018),p0=posAt(u0),p1=posAt(u1),s0=proj(p0.x,p0.y,p0.z),s1=proj(p1.x,p1.y,p1.z);
         if(s0&&s1){const fr2=1-s/12;g.strokeStyle="rgba(255,248,225,"+(fr2*0.42)+")";g.lineWidth=Math.max(1.5,s1.s*0.26*fr2);g.lineCap="round";g.beginPath();g.moveTo(s0.x,s0.y);g.lineTo(s1.x,s1.y);g.stroke();}}g.restore();}
       const pA=posAt(clamp(kF-0.02,0,0.99)),pB=posAt(clamp(kF+0.02,0.01,1)),a1=proj(pA.x,pA.y,pA.z),b1=proj(pB.x,pB.y,pB.z);if(a1&&b1)ang=Math.atan2(b1.y-a1.y,b1.x-a1.x);
-    }else if(res.out==="pbu"){
-      const bnc=bounceAt(post),side=(res.seed||0.5)<0.5?-1:1,dx=side*0.55,dy=-0.84,len=bnc.d*3.2;
+    }else if(res.out==="pbu"||res.out==="away"){
+      const bnc=bounceAt(post),side=res.out==="away"?(res.p[0]<0?-1:1):(res.seed||0.5)<0.5?-1:1,dx=side*0.55,dy=res.out==="away"?0.3:-0.84,len=bnc.d*3.2;
       const bx=res.p[0]+dx*len,by=res.p[1]+dy*len;q=proj(bx,by,bnc.z+0.12);qs=proj(bx,by,0);ang=bnc.rest?0.15:post*9*side;spin=post*14;
     }else if(ballHolder){q=proj(ballHolder.x,ballHolder.y,ballHolder.z);qs=proj(ballHolder.x,ballHolder.y,0);ang=-0.5;spin=0;}
     if(qs&&q){const hz=clamp(1-(q?((qs.y-q.y)/Math.max(1,qs.s))/14:0),0.35,1);g.save();g.fillStyle="rgba(0,0,0,"+(0.42*hz)+")";g.beginPath();g.ellipse(qs.x,qs.y,Math.max(4,qs.s*0.32*hz),Math.max(2,qs.s*0.13*hz),0,0,7);g.fill();g.restore();}
@@ -1818,6 +1957,10 @@ function drawQB(){
 
   const aimTurn=aimX!==null?clamp((aimX-W/2)/450,-0.25,0.25):0;
   const sackK=sacked?clamp((now-_vDoneAt)/260,0,1):0;
+  // right-handed: after the snap he turns his left shoulder to the field with the ball up by his right ear,
+  // then squares up as he lets it go
+  const setRaw=state==="live"?clamp((tNow-0.22)/0.38,0,1):state==="flight"?clamp(1-(tNow-tThrow)/0.16,0,1):sacked?clamp(1-sackK,0,1):0;
+  const side=setRaw*setRaw*(3-2*setRaw);
 
   const cx=W/2+(live?Math.sin(tNow*5)*4.5:0)+aimTurn*18-throwTorque*22+(sacked?sackK*38:0);
   const by=H+(live?Math.sin(tNow*10)*3.2:0)+dropBob-throwTorque*16+(sacked?sackK*82:0);
@@ -1855,6 +1998,7 @@ function drawQB(){
     g.beginPath();g.arc(armX-18,armY,18,0,7);g.fill();
   }
 
+  g.save();g.translate(52*side,6*side);g.transform(1-0.4*side,0.13*side,0,1,0,0); // shoulders turned sideways
   // 2. Sculpted Broad Shoulder Pads & Jersey Yoke
   const pg=g.createLinearGradient(-275,-75,275,10);
   pg.addColorStop(0,"#d8dde2");
@@ -1912,8 +2056,20 @@ function drawQB(){
   g.textBaseline="middle";
   g.fillText("POCKET  1",0,-41);
 
+  g.restore();
+  // ball carried high by the right ear, both hands on it
+  if(side>0.04&&throwTorque<=0.04){
+    g.save();g.globalAlpha=clamp(side*1.6,0,1);
+    const bx=150-14*side,byy=-150+18*(1-side);
+    g.strokeStyle="#eef1ee";g.lineWidth=50;g.lineCap="round";g.beginPath();g.moveTo(178-60*(1-side),-28);g.lineTo(196,-88);g.stroke();
+    g.strokeStyle="#182b57";g.lineWidth=40;g.beginPath();g.moveTo(196,-88);g.lineTo(bx+26,byy+22);g.stroke();
+    drawBall({x:bx,y:byy,s:92},-1.05,0.4,1);
+    g.fillStyle="#8a5a3c";g.beginPath();g.arc(bx+24,byy+18,19,0,7);g.fill(); // right hand under the back of the ball
+    g.beginPath();g.ellipse(bx-22,byy+8,15,12,0.4,0,7);g.fill(); // left hand on the front
+    g.restore();
+  }
   // 3. Neck & Padded Neck Roll
-  const headShift=aimTurn*24;
+  const headShift=aimTurn*24+22*side;
   g.fillStyle="#75492e";
   g.fillRect(-35+headShift*0.5,-108,70,34);
   g.fillStyle="#111c38";
@@ -1992,7 +2148,14 @@ function loop(ts){
 }
 function newPlay(){playId++;P=buildPlay(train);P.los=train?{ballOn:35,toGo:10,down:1}:losNow();DRIVE.ptsShown=DRIVE.pts;tgt=train?Math.floor(Math.random()*5):-1;state="pre";tNow=0;res=null;hover=-1;banner="";$("readout").hidden=true;$("snapBtn").textContent="Snap";$("snapBtn").disabled=false;}
 function snap(){if(state==="pre"){state="live";tNow=0;$("snapBtn").disabled=true;sayHike();setTimeout(()=>{if(state==="live")sfx("pads");},330);}else if(state==="done")newPlay();}
-function throwTo(i,pow,ago){if(state!=="live"||tNow<0.25||i<0)return;tThrow=Math.max(0.25,tNow-(ago||0));lastPow=pow===undefined?null:pow;res=decorate(evalThrow(P,i,tThrow,pow===undefined?22:15+13*pow));state="flight";sfx("whoosh");}
+function throwTo(i,pow,ago,miss){if(state!=="live"||tNow<0.25||i<0)return;tThrow=Math.max(train?0.25:REL,tNow-(ago||0));lastPow=pow===undefined?null:pow;
+  const e=evalThrow(P,i,tThrow,pow===undefined?22:15+13*pow);
+  if(miss!==undefined&&!train){e.miss=miss;e.sep-=Math.max(0,miss-0.45)*1.1;} // an off-target ball gives the defender time to get there
+  res=decorate(e);state="flight";sfx("whoosh");}
+function throwAway(side){ // out of bounds, nobody near it: lose the down, keep the ball
+  if(state!=="live"||tNow<0.25||train)return;tThrow=Math.max(REL,tNow);lastPow=null;
+  side=side||(aimX!==null?(aimX<W/2?-1:1):Math.random()<0.5?-1:1);
+  res={out:"away",i:-1,dj:-1,t:tNow,ta:tNow+0.95,ft:0.95,p:[side*30.5,rnd(4,10)],sep:0,ev:0,yards:0,seed:0.5};state="flight";sfx("whoosh");}
 /* ---------- phone football: aim model ----------
    The phone sends where its top edge (the nose of the ball) points at the end of each pump:
    az = left/right heading in degrees, el = degrees above level. Setup throws teach the game how
@@ -2019,7 +2182,8 @@ function pick(ax,ad,spd,t){ // nearest receiver to the aim point. Once the play 
   const f=fr(P,tNow);let bi=-1,bs=1e9;
   for(let i=0;i<5;i++){const p=state==="live"?evalThrow(P,i,t===undefined?tNow:t,spd||22).p:f.r[i],q=proj(p[0],p[1],2.9);if(!q)continue;
     const dx=(clamp(q.x,20,W-20)-ax)/130,dd=ad===null?0:(p[1]-ad)/12,sc=dx*dx+dd*dd;if(sc<bs){bs=sc;bi=i;}}
-  return bi;}
+  pickMiss=Math.sqrt(bs);return bi;}
+let pickMiss=0;
 function ctlMsg(m){ // messages from the phone
   if(m.t==="a"){lastAz=m.az;if(cal&&state!=="cal"){const a=aimFrom(m);aimX=a.x;aimD=a.d;}else if(azRef===null)dAz(m.az);}
   else if(m.t==="snap"){if(m.tr)logPush({k:"snap",state,tr:m.tr});snap();}
@@ -2033,7 +2197,7 @@ function ctlMsg(m){ // messages from the phone
       if(train){if(state==="live"&&tNow>=0.25)trainSample(m,a,pw,tt,pi);}
       else if(state==="live"&&pi>=0)logPush({k:"throw",play:P.play.name,t:+tt.toFixed(2),az:+dAz(m.az).toFixed(1),el:m.el,pk:m.pk,ago:m.ago,ax:Math.round(a.x),ad:a.d===null?null:+a.d.toFixed(1),pow:+pw.toFixed(2),pick:ON[pi],
         recs:[0,1,2,3,4].map(i=>{const e=evalThrow(P,i,tt,15+13*pw).p,q=proj(e[0],e[1],2.9);return {n:ON[i],x:Math.round(q.x),d:+e[1].toFixed(1)};}),tr:m.tr});
-      throwTo(pi,pw,ago);}
+      if(!train&&state==="live"&&(pi<0||pickMiss>1.75||a.x<30||a.x>W-30))throwAway(a.x<W/2?-1:1);else throwTo(pi,pw,ago,pickMiss);}
   }
 }
 // ===== SECTION C: drawCal() setup screen (REPLACE) =====
@@ -2209,10 +2373,19 @@ function finish(r){
   if(train){finishTrain(r);return;}
   state="done";$("snapBtn").disabled=false;$("snapBtn").textContent="Next play";
   const b=P.best;let pts=0,letter="F";
-  if(!r){shakeUntil=performance.now()+450;banner="SACKED: the rush got home in "+P.sack.toFixed(1)+"s";$("gYou").textContent="You held the ball for "+P.sack.toFixed(1)+"s and took the sack. The rush is different every snap, anywhere from "+SET.bmin.toFixed(1)+" to "+SET.bmax.toFixed(1)+" seconds (change it in Settings).";$("gTime").textContent="";}
+  if(!r){shakeUntil=performance.now()+650;banner="SACKED: the rush got home in "+P.sack.toFixed(1)+"s";$("gYou").textContent="You held the ball for "+P.sack.toFixed(1)+"s and took the sack. The rush is different every snap, anywhere from "+SET.bmin.toFixed(1)+" to "+SET.bmax.toFixed(1)+" seconds (change it in Settings).";$("gTime").textContent="";}
+  else if(r.out==="away"){
+    const later=P.wins.filter(w=>w.t0+w.len>r.t+0.05),missed=P.wins.filter(w=>w.t0+w.len<=r.t+0.05);
+    pts=!P.wins.length?100:later.length?25:55;
+    banner="THROWN AWAY at "+r.t.toFixed(1)+"s";
+    $("gYou").textContent=!P.wins.length?"Nobody came open before the rush got home. Throwing it away was the right call: no sack, no pick, live for the next down.":
+      later.length?"You gave up on the play early. #"+ON[later[0].i]+" still had a window at "+later[0].t0.toFixed(1)+"s.":"Better than a sack or a pick, but you missed #"+ON[missed[0].i]+" open at "+missed[0].t0.toFixed(1)+"s.";
+    $("gTime").textContent="";
+  }
   else{
     pts=clamp(Math.round(100*r.ev/Math.max(b.ev,1)),0,100);
-    banner=(r.sep>=1.8?"COMPLETE":r.sep>=0.9?"CONTESTED":"COVERED")+": #"+ON[r.i]+" was "+word(r.sep);
+    if(r.dbl)pts=0;
+    banner=r.dbl?"DOUBLE COVERED: #"+ON[r.i]+" had two defenders on him":(r.sep>=1.8?"COMPLETE":r.sep>=0.9?"CONTESTED":"COVERED")+": #"+ON[r.i]+" was "+word(r.sep);
     $("gYou").textContent="You threw to #"+ON[r.i]+" at "+r.t.toFixed(1)+"s. He was "+word(r.sep)+" with about "+Math.max(0,r.sep).toFixed(1)+" yd of space, "+Math.round(r.p[1])+" yd downfield."+(lastPow===null?"":(aimD===null?"":" Your pump pointed about "+Math.round(aimD)+" yd deep.")+" Pump power "+Math.round(lastPow*100)+"%, "+(lastPow>0.66?"a rope.":lastPow>0.33?"a firm ball.":"a floater, so the defense had time to close."));
     const bi=P.bestFor[r.i],d=r.t-bi.t;
     $("gTime").textContent=r.ev>=0.88*bi.ev?"Timing: on time for that route.":d>0?"Timing: about "+d.toFixed(1)+"s late. His window was at "+bi.t.toFixed(1)+"s.":"Timing: about "+(-d).toFixed(1)+"s early. He comes open at "+bi.t.toFixed(1)+"s.";
@@ -2222,8 +2395,11 @@ function finish(r){
   $("sPlays").textContent=stats.n;$("sAvg").textContent=Math.round(stats.sum/stats.n);$("sStreak").textContent=stats.streak;
   $("gLetter").textContent=letter;$("gLetter").style.color=pts>=68?"var(--good)":pts>=45?"var(--gold)":"var(--bad)";
   $("gHead").textContent=pts+" / 100 on "+P.play.name;
-  $("gCov").textContent=P.cov.name+(P.disguised?" (disguised: showed "+(P.shell==="two"?"two":"one")+" high before the snap)":"");
-  $("gBest").textContent=(r&&r.i===b.i&&pts>=85)?"That was the best read on the field.":"Best read: #"+ON[b.i]+" at "+b.t.toFixed(1)+"s, "+word(b.sep)+" "+Math.round(b.p[1])+" yd downfield.";
+  const shWord=P.shell==="two"?"two-high":"one-high";
+  $("gCov").textContent=P.cov.name+" · "+P.nRush+"-man rush"+(P.drop>=0?" with a lineman dropping":"")+(P.ub>=0?", one came free":"")+
+    (P.disguised?" · showed "+shWord+" and rotated at the snap":"")+(P.mug&&P.nRush<5?" · showed blitz and bailed":"")+" · "+P.wins.length+(P.wins.length===1?" window":" windows")+" on this play ("+dset().name+")";
+  const wl=P.wins.length?"Windows: "+P.wins.map(w=>"#"+ON[w.i]+" "+w.t0.toFixed(1)+"-"+(w.t0+w.len).toFixed(1)+"s").join(", ")+". ":"No receiver came open: the right answer was to throw it away. ";
+  $("gBest").textContent=wl+((r&&r.i===b.i&&pts>=85)?"That was the best read on the field.":!P.wins.length?"":"Best read: #"+ON[b.i]+" at "+b.t.toFixed(1)+"s, "+word(b.sep)+" "+Math.round(b.p[1])+" yd downfield.");
   $("gNote").textContent=P.cov.note+(conn&&aimNote?" "+aimNote:"");
   banner=driveAfter(r);
   $("readout").hidden=false;drawBoard(r);
@@ -2464,7 +2640,8 @@ function decorate(r){
   const hasD=P.frames[0].d.length>0,fa=fr(P,r.ta);let dj=-1,dd=1e9;
   fa.d.forEach((d,j)=>{const q=Math.hypot(d[0]-r.p[0],d[1]-r.p[1]);if(q<dd){dd=q;dj=j;}});
   // open or a tight window: caught. Covered: knocked down. Blanketed: intercepted.
-  r.out=!hasD||dj<0||r.sep>=0.9?"catch":r.sep>=-0.75?"pbu":"int";
+  r.dbl=hasD&&doubled(P,r);
+  r.out=!hasD||dj<0?"catch":r.dbl?"int":r.sep>=0.9?"catch":r.sep>=-0.75?"pbu":"int";
   r.dj=dj;r.seed=((playId*9301+49297)%233280)/233280;
   r.yac=r.out==="catch"?Math.round(clamp((r.sep-0.9)*1.5,0,9)+(r.sep>=3?2+(playId*7)%5:0)):0;
   return r;
@@ -2478,8 +2655,9 @@ function driveAfter(r){
   if(!r){const loss=Math.round(rnd(5,9));D.ballOn-=loss;
     if(D.ballOn<=0){msg="SAFETY · GAME OVER";over=true;}else{D.down++;msg="SACKED · LOSS OF "+loss;}
     sfx("thud",1.2);sfx("groan",0.9);}
-  else if(r.out==="int"){msg="INTERCEPTED BY #"+DN[r.dj]+" · GAME OVER";over=true;sfx("smack");sfx("boo");}
-  else if(r.out==="pbu"){msg="INCOMPLETE · BROKEN UP BY #"+DN[r.dj];D.down++;sfx("smack");sfx("groan",0.6);}
+  else if(r.out==="int"){msg="INTERCEPTED BY #"+P.dn[r.dj]+(r.dbl?" (DOUBLE COVERED)":"")+" · GAME OVER";over=true;sfx("smack");sfx("boo");}
+  else if(r.out==="pbu"){msg="INCOMPLETE · BROKEN UP BY #"+P.dn[r.dj];D.down++;sfx("smack");sfx("groan",0.6);}
+  else if(r.out==="away"){msg="THROWN AWAY · INCOMPLETE";D.down++;sfx("groan",0.35);}
   else{const gain=Math.round(r.p[1]+r.yac);D.ballOn+=gain;sfx("pop");
     if(D.ballOn>=100){D.pts+=7;msg="TOUCHDOWN! #"+ON[r.i]+" FOR "+gain;D.ballOn=25;newSeries();sfx("cheer",1.4);sfx("horn");}
     else if(D.ballOn>=D.marker){newSeries();msg="FIRST DOWN · #"+ON[r.i]+" FOR "+gain;sfx("cheer",1);}
@@ -2492,7 +2670,7 @@ function driveAfter(r){
   updateDriveUI();return msg;
 }
 function updateDriveUI(){const el=$("driveTxt");if(!el)return;const L=losNow(),dn=["1st","2nd","3rd","4th"][Math.min(L.down,4)-1];
-  el.textContent="NEXT: "+dn+" & "+(L.ballOn+L.toGo>=100?"goal":L.toGo)+" · "+(L.ballOn<50?"own "+L.ballOn:L.ballOn===50?"midfield":"opp "+(100-L.ballOn))+"  ·  PTS "+DRIVE.pts+"  ·  BEST "+DRIVE.best;}
+  el.textContent="NEXT: "+dn+" & "+(L.ballOn+L.toGo>=100?"goal":L.toGo)+" · "+(L.ballOn<50?"own "+L.ballOn:L.ballOn===50?"midfield":"opp "+(100-L.ballOn))+"  ·  PTS "+DRIVE.pts+"  ·  BEST "+DRIVE.best+"  ·  "+dset().name.toUpperCase();}
 
 /* ---------- settings ---------- */
 function fitPX(){ // draw at the real pixel size of the screen so the far field stays sharp on a TV
@@ -2503,10 +2681,13 @@ function recenterAim(){if(cal&&cal.x.b&&lastAz!==null)azOff+=dAz(lastAz)-(W/2-ca
 function initSettings(){
   const bMin=$("bMin"),bMax=$("bMax"),show=()=>{$("bMinV").textContent=SET.bmin.toFixed(1)+"s";$("bMaxV").textContent=SET.bmax.toFixed(1)+"s";
     document.querySelectorAll("#camSeg button").forEach(b=>b.classList.toggle("on",+b.dataset.c===SET.cam));
+    document.querySelectorAll("#diffSeg button").forEach(b=>b.classList.toggle("on",+b.dataset.d===SET.diff));
+    $("diffNote").textContent=["Easy: a few windows every play, and they stay open a beat longer.","Medium: two or three short windows, tighter coverage and more disguise.","Hard: one quick window at most, sometimes none. If nobody is open, throw it away."][SET.diff|0];
     $("sCrowd").checked=SET.crowd;$("sSfx").checked=SET.sfx;$("sVol").value=SET.vol;};
   bMin.value=SET.bmin;bMax.value=SET.bmax;show();
   bMin.addEventListener("input",()=>{SET.bmin=+bMin.value;if(SET.bmax<SET.bmin+0.3){SET.bmax=Math.min(7,SET.bmin+0.3);bMax.value=SET.bmax;}saveSet();show();});
   bMax.addEventListener("input",()=>{SET.bmax=+bMax.value;if(SET.bmin>SET.bmax-0.3){SET.bmin=Math.max(1.5,SET.bmax-0.3);bMin.value=SET.bmin;}saveSet();show();});
+  document.querySelectorAll("#diffSeg button").forEach(b=>b.addEventListener("click",()=>{SET.diff=+b.dataset.d;saveSet();show();updateDriveUI();if(state==="pre"&&!train)newPlay();}));
   document.querySelectorAll("#camSeg button").forEach(b=>b.addEventListener("click",()=>{SET.cam=+b.dataset.c;applyCam();saveSet();show();}));
   $("sCrowd").addEventListener("change",e=>{SET.crowd=e.target.checked;auInit();saveSet();});
   $("sSfx").addEventListener("change",e=>{SET.sfx=e.target.checked;auInit();saveSet();});
@@ -2527,11 +2708,12 @@ function nearest(ev,maxD){
   return bi;
 }
 cv.addEventListener("pointermove",e=>{if(e.pointerType==="mouse")hover=nearest(e,170);});
-cv.addEventListener("pointerdown",e=>{if(state==="live"){const i=nearest(e,190);if(i>=0)throwTo(i);}});
+cv.addEventListener("pointerdown",e=>{if(state==="live"){const i=nearest(e,190);if(i>=0)throwTo(i);else if(!train){const rc=cv.getBoundingClientRect();throwAway((e.clientX-rc.left)/rc.width<0.5?-1:1);}}});
 addEventListener("keydown",e=>{
   if($("sim").hidden)return;
   if(e.code==="Space"||e.key==="Enter"){e.preventDefault();snap();}
   else if(e.key>="1"&&e.key<="5")throwTo(+e.key-1);
+  else if(e.key==="t"||e.key==="T")throwAway();
   else if((e.key==="n"||e.key==="N")&&state==="pre"){newPlay();sfx("blip");}
 });
 $("snapBtn").addEventListener("click",e=>{snap();e.currentTarget.blur();});
