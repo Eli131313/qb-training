@@ -137,6 +137,9 @@ button.go:hover{
   border:1px solid #2b3d54;
   box-shadow:0 18px 46px rgba(0,0,0,0.65),0 0 0 1px rgba(255,255,255,0.04) inset;
 }
+#stageWrap:fullscreen,body.tv #stageWrap{display:flex;align-items:center;justify-content:center;border:0;border-radius:0;width:100vw;height:100vh;box-shadow:none}
+body.tv #stageWrap{position:fixed;inset:0;z-index:60}
+#stageWrap:fullscreen #stage,body.tv #stage{max-height:100vh;object-fit:contain}
 #stage{
   display:block;
   width:100%;
@@ -350,7 +353,7 @@ kbd{
     </div>
   </div>
   <div class="card" id="trainBar" hidden style="margin:10px 0"><h2>Throw training</h2><p id="trainMsg" style="font-weight:600;margin:0">Throw to the receiver marked in green.</p><p class="dimtxt" style="margin:6px 0 0">No defense here. Snap, then pump at the green receiver, leading him if he is moving. Every throw is saved with who you meant to hit, and the aim model re-fits itself to your motion as you go. Do as many as you like, then use Copy throw data.</p></div>
-  <p class="dimtxt" id="simHelp">Drive the field. Routes show before the snap and disappear at the snap. Read the safeties, then throw by tapping a receiver (or pump the football phone). You get 3 downs to make a first down, 4 inside the opponent's 35. Sacks lose yards. An interception or a turnover on downs ends the game. <kbd>Space</kbd> snaps and loads the next play, <kbd>N</kbd> picks a different play before the snap. If nobody is open, throw it away: press <kbd>T</kbd>, tap an empty part of the field, or pump the football at the sideline. Throwing into double coverage is always intercepted.</p>
+  <p class="dimtxt" id="simHelp">Drive the field. Routes show before the snap and disappear at the snap. Read the safeties, then throw by tapping a receiver (or pump the football phone). You get 3 downs to make a first down, 4 inside the opponent's 35. Sacks lose yards. An interception or a turnover on downs ends the game. The next play loads by itself a few seconds after the whistle. <kbd>Space</kbd> snaps, <kbd>F</kbd> goes fullscreen, <kbd>N</kbd> picks a different play before the snap. If nobody is open, throw it away: press <kbd>T</kbd>, tap an empty part of the field, or pump the football at the sideline. Throwing into double coverage is always intercepted.</p>
   <div class="card" id="linkCard" hidden>
     <h2>Phone as the football</h2>
     <div id="link">
@@ -401,7 +404,7 @@ kbd{
 "use strict";
 const PHONE=true; // phone-as-football needs a normally hosted https page
 const $=id=>document.getElementById(id);
-const W=1280,H=720,K=520; // logical canvas size and panoramic lens strength
+let W=1280;const H=720,K=520; // logical canvas size (W grows to fill wide screens in fullscreen) and panoramic lens strength
 const CAMS=[{h:5.2,y:-8,hor:185},{h:3.8,y:-8.2,hor:228},{h:3.0,y:-8.4,hor:258}]; // high, mid, low quarterback cameras
 let HOR=185,PX=1,frameN=0,fieldCv=null,fieldKey="";const CAM={y:-8,h:5.2};
 const SET={bmin:2.2,bmax:4.1,cam:0,crowd:true,sfx:true,vol:0.8,diff:0};
@@ -642,7 +645,8 @@ function evalThrow(P,i,t,spd){spd=spd||22;
 /* ---------- rendering ---------- */
 const cv=$("stage"),g=cv.getContext("2d");
 function proj(x,y,z){ // panoramic (cylindrical) lens: wide enough to see both sidelines from the pocket
-  const d=y-CAM.y;if(d<0.3)return null;const r=Math.hypot(x,d);return {x:W/2+K*Math.atan2(x,d),y:HOR+K*(CAM.h-(z||0))/r,s:K/r};}
+  // on a wide screen the lens keeps wrapping past straight-sideways, so the stands beside you fill the edges
+  const d=y-CAM.y,r=Math.hypot(x,d),ang=W>1280?Math.min(2.4,(W/2+80)/K):0;if(d<0.3&&(r<1.5||Math.abs(Math.atan2(x,d))>ang))return null;return {x:W/2+K*Math.atan2(x,d),y:HOR+K*(CAM.h-(z||0))/r,s:K/r};}
 // ===== STADIUM + FIELD: painted once per play into an offscreen canvas at screen resolution =====
 // The field is drawn for the current line of scrimmage on the drive, so yard lines, numbers, the first-down
 // line and the far end zone all sit where they really are. The stands are a 3D bowl that wraps around the field.
@@ -675,7 +679,7 @@ function paintField(c,L){
   c.fillStyle=sky;c.fillRect(0,0,W,H);
 
   // 2. The bowl: plan outline runs up the left side, rounds the far corners, crosses the far end, and comes down the right
-  const R=18,ring=[],yN=CAM.y+1.2,add=(x,y,nx,ny)=>ring.push({x,y,nx,ny});
+  const R=18,ring=[],yN=W>1280?CAM.y-40:CAM.y+1.2,add=(x,y,nx,ny)=>ring.push({x,y,nx,ny});
   for(let y=yN;y<WALL-R;y+=3.5)add(-SX,y,-1,0);
   for(let a=0;a<=10;a++){const th=Math.PI-a*Math.PI/20;add(-SX+R+R*Math.cos(th),WALL-R+R*Math.sin(th),Math.cos(th),Math.sin(th));}
   for(let x=-SX+R+3.5;x<SX-R;x+=3.5)add(x,WALL,0,1);
@@ -2146,8 +2150,8 @@ function loop(ts){
   if((++frameN)%60===0)fitPX();
   auTick();g.setTransform(PX,0,0,PX,0,0);draw();requestAnimationFrame(loop);
 }
-function newPlay(){playId++;P=buildPlay(train);P.los=train?{ballOn:35,toGo:10,down:1}:losNow();DRIVE.ptsShown=DRIVE.pts;tgt=train?Math.floor(Math.random()*5):-1;state="pre";tNow=0;res=null;hover=-1;banner="";$("readout").hidden=true;$("snapBtn").textContent="Snap";$("snapBtn").disabled=false;}
-function snap(){if(state==="pre"){state="live";tNow=0;$("snapBtn").disabled=true;sayHike();setTimeout(()=>{if(state==="live")sfx("pads");},330);}else if(state==="done")newPlay();}
+function newPlay(){playId++;P=buildPlay(train);P.los=train?{ballOn:35,toGo:10,down:1}:losNow();DRIVE.ptsShown=DRIVE.pts;tgt=train?Math.floor(Math.random()*5):-1;state="pre";tNow=0;res=null;hover=-1;banner="";if(train)$("readout").hidden=true;$("snapBtn").textContent="Snap";$("snapBtn").disabled=false;}
+function snap(){if(state==="pre"){state="live";tNow=0;$("readout").hidden=true;$("snapBtn").disabled=true;sayHike();setTimeout(()=>{if(state==="live")sfx("pads");},330);}else if(state==="done")newPlay();}
 function throwTo(i,pow,ago,miss){if(state!=="live"||tNow<0.25||i<0)return;tThrow=Math.max(train?0.25:REL,tNow-(ago||0));lastPow=pow===undefined?null:pow;
   const e=evalThrow(P,i,tThrow,pow===undefined?22:15+13*pow);
   if(miss!==undefined&&!train){e.miss=miss;e.sep-=Math.max(0,miss-0.45)*1.1;} // an off-target ball gives the defender time to get there
@@ -2161,22 +2165,31 @@ function throwAway(side){ // out of bounds, nobody near it: lose the down, keep 
    az = left/right heading in degrees, el = degrees above level. Setup throws teach the game how
    this player's motion maps to the screen: left/right from az, short/deep from el. */
 const CAL_T=[{x:-13,y:4,n:"SHORT LEFT",h:"Quick, flat pass"},{x:13,y:4,n:"SHORT RIGHT",h:"Quick, flat pass"},{x:0,y:12,n:"OVER THE MIDDLE",h:"Medium throw"},{x:-22,y:26,n:"DEEP LEFT",h:"Deep ball: put air under it"},{x:22,y:26,n:"DEEP RIGHT",h:"Deep ball: put air under it"}];
+// Baseline aim model, fitted from Eli's throw data (Nov 13 2026: 14 clean setup and training throws).
+// x: pixels from the center of the screen per degree of heading. d: yards downfield from nose elevation.
+// Heading has no fixed zero between sessions, so a 3-pump aim check on connect only sets where "center" is.
+const BASE={x:{a:0,b:11.16},d:{a:28.4,b:0.52},pow:53.7};
+const QUICK_T=[CAL_T[0],CAL_T[2],CAL_T[1]];
+let calT=CAL_T;
 const wrap=a=>((a%360)+540)%360-180;
 const dAz=az=>{if(azRef===null)azRef=az;return wrap(az-azRef)-azOff;};
 function linreg(xs,ys){const n=xs.length,mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;let sxx=0,sxy=0,syy=0;
   xs.forEach((x,i)=>{sxx+=(x-mx)*(x-mx);sxy+=(x-mx)*(ys[i]-my);syy+=(ys[i]-my)*(ys[i]-my);});
   if(sxx<1e-6)return {a:my,b:0,r2:0,spread:0};const b=sxy/sxx;return {a:my-b*mx,b,r2:syy?sxy*sxy/(sxx*syy):0,spread:Math.sqrt(sxx/n)};}
-function startCal(){state="cal";cal=null;calS=[];trainS=[];azRef=null;azOff=0;aimX=null;aimD=null;calMsg="";calFlash=0;$("readout").hidden=true;$("snapBtn").disabled=true;}
-function finishCal(){
-  if(state!=="cal"||calS.length<CAL_T.length)return;
-  const fx=linreg(calS.map(s=>s.az),CAL_T.map(t=>proj(t.x,t.y,0).x)),fd=linreg(calS.map(s=>s.el),CAL_T.map(t=>t.y));
-  if(fx.r2<0.6||fx.spread<3){logPush({k:"fit-failed",x:fx,d:fd});calS=[];calMsg="Could not tell your left throws from your right ones. Face the TV and finish each pump with the nose pointing at the target.";return;}
-  const depthOk=fd.r2>=0.45&&fd.spread>=2.5&&fd.b>0===(calS[3].el+calS[4].el>calS[0].el+calS[1].el);
-  cal={x:fx,d:depthOk?fd:null};powRef=calS.map(s=>s.pk).sort((a,b)=>a-b)[2];logPush({k:"fit",x:fx,d:fd,depthOk,powRef});
-  aimNote=depthOk?"":"Left and right aim is set. Short and deep pumps looked the same, so depth aiming is off. Run New player setup to try again.";
-  newPlay();
+function startCal(quick){calT=quick?QUICK_T:CAL_T;state="cal";cal=null;calS=[];trainS=[];azRef=null;azOff=0;aimX=null;aimD=null;calMsg="";calFlash=0;$("readout").hidden=true;$("snapBtn").disabled=true;}
+function finishCal(){ // never fails: anything the setup throws can't pin down falls back to the baseline
+  if(state!=="cal"||calS.length<calT.length)return;
+  const full=calT.length>=5,tx=calT.map(t=>proj(t.x,t.y,0).x-W/2),td=calT.map(t=>t.y);
+  const fx=linreg(calS.map(s=>s.az),tx),fd=linreg(calS.map(s=>s.el),td),b=BASE.x.b;
+  const own=full&&fx.r2>=0.6&&fx.spread>=3&&fx.b>b*0.5&&fx.b<b*2;
+  const x=own?{a:fx.a,b:fx.b}:{a:tx.reduce((q,v,i)=>q+v-b*calS[i].az,0)/tx.length,b};
+  const depthOwn=full&&fd.r2>=0.45&&fd.spread>=2.5&&fd.b>0;
+  cal={x,d:depthOwn?{a:fd.a,b:fd.b}:{a:BASE.d.a,b:BASE.d.b}};
+  powRef=full?clamp(calS.map(s=>s.pk).sort((a,b)=>a-b)[2],35,70):BASE.pow;
+  logPush({k:"fit",quick:!full,x:cal.x,d:cal.d,own,depthOwn,powRef,W});
+  aimNote="";newPlay();
 }
-function aimFrom(m){return {x:clamp(cal.x.a+cal.x.b*dAz(m.az),0,W),d:cal.d?clamp(cal.d.a+cal.d.b*m.el,-5,42):null};}
+function aimFrom(m){return {x:clamp(W/2+cal.x.a+cal.x.b*dAz(m.az),0,W),d:cal.d?clamp(cal.d.a+cal.d.b*m.el,-5,42):null};}
 function pick(ax,ad,spd,t){ // nearest receiver to the aim point. Once the play is live, each receiver is judged by where
   // he will be when the ball gets there, so you lead a moving receiver and throw straight at one who is sitting still.
   const f=fr(P,tNow);let bi=-1,bs=1e9;
@@ -2186,13 +2199,14 @@ function pick(ax,ad,spd,t){ // nearest receiver to the aim point. Once the play 
 let pickMiss=0;
 function ctlMsg(m){ // messages from the phone
   if(m.t==="a"){lastAz=m.az;if(cal&&state!=="cal"){const a=aimFrom(m);aimX=a.x;aimD=a.d;}else if(azRef===null)dAz(m.az);}
-  else if(m.t==="snap"){if(m.tr)logPush({k:"snap",state,tr:m.tr});snap();}
-  else if(m.t==="skip"){if(state==="pre"){newPlay();sfx("blip");}}
+  else if(m.t==="snap"){logPush({k:"snap",state,f:m.f,tr:m.tr});snap();}
+  else if(m.t==="skip"){logPush({k:"skip",state,f:m.f});if(state==="pre"){newPlay();sfx("blip");}}
+  else if(m.t==="g"){if(state==="pre")logPush({k:"gest",f:m.f,tr:m.tr});} // a motion that was neither: kept for tuning
   else if(m.t==="wrong"){for(let i=LOG.length-1;i>=0;i--)if(LOG[i].k==="throw"){LOG[i].wrong=m.want||true;break;}}
-  else if(m.t==="recal"){startCal();}
-  else if(m.t==="center"){if(cal&&cal.x.b)azOff+=dAz(m.az)-(W/2-cal.x.a)/cal.x.b;}
+  else if(m.t==="recal"){startCal(false);}
+  else if(m.t==="center"){if(cal&&cal.x.b)azOff+=dAz(m.az)+cal.x.a/cal.x.b;}
   else if(m.t==="throw"){
-    if(state==="cal"){const now=performance.now();if(now<calFlash||calS.length>=CAL_T.length)return;calMsg="";const ct=CAL_T[calS.length];calS.push({az:dAz(m.az),el:m.el,pk:m.pk});logPush({k:"cal",target:ct.n,tx:Math.round(proj(ct.x,ct.y,0).x),td:ct.y,az:+dAz(m.az).toFixed(1),el:m.el,pk:m.pk,ago:m.ago,tr:m.tr});calFlash=now+900;if(calS.length===CAL_T.length)setTimeout(finishCal,900);}
+    if(state==="cal"){const now=performance.now();if(now<calFlash||calS.length>=calT.length)return;calMsg="";const ct=calT[calS.length];calS.push({az:dAz(m.az),el:m.el,pk:m.pk});logPush({k:"cal",target:ct.n,tx:Math.round(proj(ct.x,ct.y,0).x),td:ct.y,az:+dAz(m.az).toFixed(1),el:m.el,pk:m.pk,ago:m.ago,tr:m.tr});calFlash=now+900;if(calS.length===calT.length)setTimeout(finishCal,900);}
     else if(cal){const a=aimFrom(m);aimX=a.x;aimD=a.d;const pw=clamp(0.6*(m.pk-12)/Math.max(4,powRef-12),0.05,1),ago=(m.ago||0)/1000;const tt=Math.max(0.25,tNow-ago),pi=pick(a.x,a.d,15+13*pw,tt);
       if(train){if(state==="live"&&tNow>=0.25)trainSample(m,a,pw,tt,pi);}
       else if(state==="live"&&pi>=0)logPush({k:"throw",play:P.play.name,t:+tt.toFixed(2),az:+dAz(m.az).toFixed(1),el:m.el,pk:m.pk,ago:m.ago,ax:Math.round(a.x),ad:a.d===null?null:+a.d.toFixed(1),pow:+pw.toFixed(2),pick:ON[pi],
@@ -2209,7 +2223,7 @@ function drawCal(){
   g.fillStyle="rgba(4,9,16,0.28)";
   g.fillRect(0,0,W,H);
 
-  const activeT=CAL_T[Math.min(cur,CAL_T.length-1)];
+  const activeT=calT[Math.min(cur,calT.length-1)];
   if(activeT){
     const qStart=proj(0,-5.5,1.2),qEnd=proj(activeT.x,activeT.y,1.1);
     if(qStart&&qEnd){
@@ -2226,7 +2240,7 @@ function drawCal(){
     }
   }
 
-  CAL_T.forEach((t,i)=>{
+  calT.forEach((t,i)=>{
     const q=proj(t.x,t.y,1.1),qGround=proj(t.x,t.y,0);
     const r=clamp(q.s*2.4,30,80);
     const isCur=i===cur,isDone=i<n;
@@ -2303,9 +2317,9 @@ function drawCal(){
 
   drawQB();
 
-  const t=CAL_T[Math.min(cur,CAL_T.length-1)];
-  const big=flash?"LOCKED IN — GOT IT":"CALIBRATION "+(n+1)+" OF "+CAL_T.length+"  •  PUMP AT "+t.n;
-  const small=flash?(n===CAL_T.length?"Calibration complete. Entering the pocket...":"Locking sensor reference — next target coming up"):t.h+". Finish with the nose of the phone pointing at the target.";
+  const t=calT[Math.min(cur,calT.length-1)];
+  const big=flash?"LOCKED IN — GOT IT":(calT.length<5?"AIM CHECK ":"CALIBRATION ")+(n+1)+" OF "+calT.length+"  •  PUMP AT "+t.n;
+  const small=flash?(n===calT.length?"Calibration complete. Entering the pocket...":"Locking sensor reference — next target coming up"):t.h+". Finish with the nose of the phone pointing at the target.";
 
   g.save();
   const hudY=H-158;
@@ -2318,8 +2332,8 @@ function drawCal(){
   g.fillStyle=flash?"#59d98e":"#f5c542";
   g.fillRect(0,hudY,W,3);
 
-  const pillW=44,pillGap=10,totalW=CAL_T.length*pillW+(CAL_T.length-1)*pillGap,startX=W/2-totalW/2;
-  for(let i=0;i<CAL_T.length;i++){
+  const pillW=44,pillGap=10,totalW=calT.length*pillW+(calT.length-1)*pillGap,startX=W/2-totalW/2;
+  for(let i=0;i<calT.length;i++){
     const px=startX+i*(pillW+pillGap),py=hudY+16;
     g.fillStyle=i<n?"#59d98e":i===cur?(flash?"#59d98e":"#f5c542"):"rgba(255,255,255,0.16)";
     g.beginPath();g.roundRect(px,py,pillW,6,3);g.fill();
@@ -2364,9 +2378,9 @@ function trainSample(m,a,pw,tt,pi){ // a training throw: we know who it was mean
   const e=evalThrow(P,tgt,tt,15+13*pw).p,q=proj(e[0],e[1],2.9),now=f=>({n:ON[f],x:Math.round(labelPos(f,fr(P,tt)).x),d:+fr(P,tt).r[f][1].toFixed(1)});
   logPush({k:"train",play:P.play.name,t:+tt.toFixed(2),want:ON[tgt],pick:pi<0?null:ON[pi],hit:pi===tgt,az:+dAz(m.az).toFixed(1),el:m.el,pk:m.pk,ago:m.ago,pow:+pw.toFixed(2),ax:Math.round(a.x),ad:a.d===null?null:+a.d.toFixed(1),
     lead:{x:Math.round(q.x),d:+e[1].toFixed(1)},now:now(tgt),recs:[0,1,2,3,4].map(i=>{const v=evalThrow(P,i,tt,15+13*pw).p;return {n:ON[i],x:Math.round(proj(v[0],v[1],2.9).x),d:+v[1].toFixed(1)};}),tr:m.tr});
-  trainS.push({az:dAz(m.az),el:m.el,x:q.x,d:e[1]});if(trainS.length>80)trainS.shift();
+  trainS.push({az:dAz(m.az),el:m.el,x:q.x-W/2,d:e[1]});if(trainS.length>80)trainS.shift();
   if(trainS.length>=8){const fx=linreg(trainS.map(v=>v.az),trainS.map(v=>v.x)),fd=linreg(trainS.map(v=>v.el),trainS.map(v=>v.d));
-    if(fx.r2>=0.6&&fx.spread>=3){const dOk=fd.r2>=0.4&&fd.spread>=2.5&&(!cal.d||fd.b>0===cal.d.b>0);cal={x:fx,d:dOk?fd:cal.d};if(dOk)aimNote="";
+    if(fx.r2>=0.6&&fx.spread>=3&&fx.b>BASE.x.b*0.5&&fx.b<BASE.x.b*2){const dOk=fd.r2>=0.4&&fd.spread>=2.5&&(!cal.d||fd.b>0===cal.d.b>0);cal={x:fx,d:dOk?fd:cal.d};if(dOk)aimNote="";
       if(trainS.length%10===0)logPush({k:"refit",n:trainS.length,x:fx,d:fd,dOk});}}
 }
 function finish(r){
@@ -2403,6 +2417,9 @@ function finish(r){
   $("gNote").textContent=P.cov.note+(conn&&aimNote?" "+aimNote:"");
   banner=driveAfter(r);
   $("readout").hidden=false;drawBoard(r);
+  // no click needed: the next down (or a fresh game after a turnover) loads on its own
+  const id=playId,over=banner.indexOf("GAME OVER")>=0;
+  setTimeout(()=>{if(!train&&state==="done"&&id===playId)newPlay();},over?5000:3500);
 }
 // ===== SECTION D: drawBoard() overhead replay diagram, canvas #board 640x420 (REPLACE) =====
 function drawBoard(r){
@@ -2674,10 +2691,15 @@ function updateDriveUI(){const el=$("driveTxt");if(!el)return;const L=losNow(),d
 
 /* ---------- settings ---------- */
 function fitPX(){ // draw at the real pixel size of the screen so the far field stays sharp on a TV
+  // fullscreen on a wide screen (projector, movie-screen shape): widen the picture to the screen's own shape
+  const tv=!document.fullscreenElement&&innerWidth>900&&innerWidth>=screen.width-4&&innerHeight>=screen.height-4;
+  document.body.classList.toggle("tv",tv);
+  const fs=tv||document.fullscreenElement===$("stageWrap"),nw=fs?clamp(Math.round(H*innerWidth/Math.max(1,innerHeight)/2)*2,1280,2880):1280;
+  if(nw!==W){W=nw;PX=0;fieldKey="";}
   const r=cv.getBoundingClientRect(),want=clamp(Math.round((r.width||W)*(window.devicePixelRatio||1)/W*4)/4,1,2);
   if(want!==PX){PX=want;cv.width=Math.round(W*PX);cv.height=Math.round(H*PX);fieldKey="";}
 }
-function recenterAim(){if(cal&&cal.x.b&&lastAz!==null)azOff+=dAz(lastAz)-(W/2-cal.x.a)/cal.x.b;}
+function recenterAim(){if(cal&&cal.x.b&&lastAz!==null)azOff+=dAz(lastAz)+cal.x.a/cal.x.b;}
 function initSettings(){
   const bMin=$("bMin"),bMax=$("bMax"),show=()=>{$("bMinV").textContent=SET.bmin.toFixed(1)+"s";$("bMaxV").textContent=SET.bmax.toFixed(1)+"s";
     document.querySelectorAll("#camSeg button").forEach(b=>b.classList.toggle("on",+b.dataset.c===SET.cam));
@@ -2694,7 +2716,7 @@ function initSettings(){
   $("sVol").addEventListener("input",e=>{SET.vol=+e.target.value;auInit();saveSet();});
   $("setBtn").addEventListener("click",()=>{$("setCard").hidden=!$("setCard").hidden;$("setBtn").classList.toggle("on",!$("setCard").hidden);});
   $("recBtn").addEventListener("click",()=>{if(!conn||!cal){$("phoneNote").textContent="Connect the football phone and finish setup first.";return;}recenterAt=performance.now()+3000;});
-  $("calBtn").addEventListener("click",()=>{if(!conn){$("phoneNote").textContent="Connect the football phone first.";return;}startCal();});
+  $("calBtn").addEventListener("click",()=>{if(!conn){$("phoneNote").textContent="Connect the football phone first.";return;}startCal(false);});
   $("wrongBtn").addEventListener("click",()=>{for(let i=LOG.length-1;i>=0;i--)if(LOG[i].k==="throw"||LOG[i].k==="train"){LOG[i].wrong=true;logSave();$("phoneNote").textContent="Flagged the last throw as a wrong read.";return;}$("phoneNote").textContent="No throws logged yet.";});
   ["pointerdown","keydown"].forEach(t=>addEventListener(t,auInit,{passive:true}));
   addEventListener("resize",fitPX);document.addEventListener("fullscreenchange",()=>setTimeout(fitPX,50));
@@ -2715,6 +2737,7 @@ addEventListener("keydown",e=>{
   else if(e.key>="1"&&e.key<="5")throwTo(+e.key-1);
   else if(e.key==="t"||e.key==="T")throwAway();
   else if((e.key==="n"||e.key==="N")&&state==="pre"){newPlay();sfx("blip");}
+  else if(e.key==="f"||e.key==="F")$("fsBtn").click();
 });
 $("snapBtn").addEventListener("click",e=>{snap();e.currentTarget.blur();});
 function tab(v){ // "sim" | "train" | "film"
@@ -2758,20 +2781,20 @@ if(PHONE&&!code){$("linkCard").hidden=false;logButtons();
     try{await Promise.all([loadJs(PEERJS),loadJs(QRJS)]);}catch(_){$("linkMsg").textContent="Could not load the connection library. Check the internet connection and try again.";return;}
     const id=Math.random().toString(36).slice(2,8),peer=new Peer("pocketreads-"+id);
     peer.on("open",()=>{const url=location.origin+location.pathname+"?c="+id;$("qr").hidden=false;$("qr").innerHTML="";new QRCode($("qr"),{text:url,width:150,height:150});$("linkMsg").textContent="Scan with the football phone";$("linkBtn").hidden=true;});
-    peer.on("connection",c=>{c.on("open",()=>{conn=c;sentState="";$("qr").hidden=true;$("linkMsg").textContent="Football phone connected";try{c.send({t:"rl",log:LOG});}catch(_){}startCal();});c.on("data",ctlMsg);c.on("close",()=>{conn=null;aimX=null;aimD=null;if(state==="cal")newPlay();$("qr").hidden=false;$("linkMsg").textContent="Phone disconnected. Scan again to rejoin.";});});
+    peer.on("connection",c=>{c.on("open",()=>{conn=c;sentState="";$("qr").hidden=true;$("linkMsg").textContent="Football phone connected";try{c.send({t:"rl",log:LOG});}catch(_){}startCal(true);});c.on("data",ctlMsg);c.on("close",()=>{conn=null;aimX=null;aimD=null;if(state==="cal")newPlay();$("qr").hidden=false;$("linkMsg").textContent="Phone disconnected. Scan again to rejoin.";});});
     peer.on("error",e=>{$("linkMsg").textContent="Connection problem: "+(e.type||e.message)+". Reload and try again.";});
   });
 }
 /* ---------- phone as football: phone side ----------
    Hold it like a football: the TOP of the phone is the nose and points at the TV, screen facing away from you.
    No buttons once it is running, so a grip can't press anything by accident.
-   Gestures: hold still, then pull straight back along the ball = hike (or next play after the whistle).
-             hold still, then flick it sideways = skip to a different play (before the snap only).
+   Gestures: hold it out in front, face up, then pull it back up toward your ear = hike.
+             a quick sideways flick = skip to a different play (before the snap only).
              pump toward a receiver = throw. */
 if(PHONE&&code){
   document.querySelector("main").hidden=true;$("ctl").hidden=false;
   const RAD=Math.PI/180;
-  let c=null,ready=false,ps="cal",lastT=0,grav=[0,0,9.8],yaw=0,ori=null,useOri=null,t0=0,still=0,stillAt=0,mute=0,pump=null,lastSend=0,buf=[],jerk=null,wl=null;
+  let c=null,ready=false,ps="cal",lastT=0,grav=[0,0,9.8],yaw=0,ori=null,useOri=null,t0=0,gest=null,mute=0,pump=null,lastSend=0,buf=[],jerk=null,wl=null;
   const trace=t0=>buf.filter(b=>b[0]>=t0-350).map(b=>[Math.round(b[0]-t0),+b[1].toFixed(1),Math.round(b[2]),+b[3].toFixed(1),+b[4].toFixed(1)]);
   const say=(a,b)=>{$("cStatus").textContent=a;if(b!==undefined)$("cHelp").textContent=b;};
   const send=m=>{if(c&&c.open)try{c.send(m);}catch(_){}};
@@ -2783,8 +2806,8 @@ if(PHONE&&code){
   function playHelp(){
     if(ps==="cal")say("Setup","Follow the TV. Pump at each target, five in all. Finish each pump with the top of the phone pointing at the target.");
     else if(ps==="live")say("Live","Pump at your receiver. Harder pump, faster ball. Nose up for a deeper throw.");
-    else if(ps==="pre")say("Pull back to hike","Hold still, then pull straight back to hike. Flick it sideways for a different play.");
-    else say("Pull back for next play","Hold still, then pull straight back.");
+    else if(ps==="pre")say("Pull back to hike","Hold it out in front of you, face up, then pull it back up by your ear to hike. Quick sideways flick for a different play.");
+    else say("Next play coming","The next play loads by itself.");
   }
   async function keepAwake(){try{if(navigator.wakeLock&&document.visibilityState==="visible")wl=await navigator.wakeLock.request("screen");}catch(_){}}
   document.addEventListener("visibilitychange",keepAwake);
@@ -2813,15 +2836,19 @@ if(PHONE&&code){
           send({t:"throw",az:+n.az.toFixed(2),el:+n.el.toFixed(2),pk:+pump.peak.toFixed(1),ago:Math.round(now-pump.t0),tr:trace(pump.t0)});
           $("cMeter").firstElementChild.style.width=Math.round(clamp((pump.peak-12)/30,0.05,1)*100)+"%";buzz(60);pump=null;mute=now+800;}}
     }else{
-      // hike vs. skip: both start from a still ball; the direction of the jerk decides.
-      // Along the phone's long axis (pull back) = hike. Across it (sideways flick) = skip the play.
-      if(lin<2){still+=dt;if(still>0.35)stillAt=now;}else still=0;
-      if(!jerk&&lin>7&&now-stillAt<350)jerk={t:now,along:0,side:0,peak:0};
-      if(jerk){jerk.along+=Math.abs(lv[1]);jerk.side+=Math.hypot(lv[0],lv[2]);jerk.peak=Math.max(jerk.peak,lin);
-        if(now-jerk.t>90){
-          if(jerk.along>=jerk.side*1.1){send({t:"snap",tr:trace(now)});buzz(30);}
-          else if(ps==="pre"&&jerk.side>=jerk.along*1.3&&jerk.peak>9){send({t:"skip"});buzz([20,60,20]);}
-          jerk=null;still=0;stillAt=0;mute=now+750;}}
+      // Hike: a long pull from out in front back up by the ear. It takes a while, and the phone tips a long way
+      // (face up to near upright), so it is judged by how far the phone turned. Skip: a quick sideways flick that
+      // barely turns the phone. A motion ends when the phone settles; then it is classified once.
+      if(!gest&&lin>5)gest={t:now,g0:grav.slice(),along:0,side:0,peak:0,turn:0,quiet:0};
+      if(gest){gest.along+=Math.abs(lv[1])*dt;gest.side+=Math.hypot(lv[0],lv[2])*dt;gest.peak=Math.max(gest.peak,lin);gest.turn+=rot*dt;
+        gest.quiet=lin<3?gest.quiet+dt:0;const dur=now-gest.t;
+        if((dur>120&&gest.quiet>0.12)||dur>1000){
+          const g0=gest.g0,g1=grav,dot=(g0[0]*g1[0]+g0[1]*g1[1]+g0[2]*g1[2])/((Math.hypot(...g0)*Math.hypot(...g1))||1),tilt=Math.acos(clamp(dot,-1,1))/RAD;
+          const f={dur:Math.round(dur),tilt:Math.round(tilt),turn:Math.round(gest.turn),along:+gest.along.toFixed(2),side:+gest.side.toFixed(2),peak:+gest.peak.toFixed(1)};
+          if(dur>=170&&gest.peak>=6&&(tilt>=30||gest.turn>=65)){send({t:"snap",f,tr:trace(gest.t)});buzz(30);mute=now+600;}
+          else if(ps==="pre"&&dur<450&&gest.peak>=9&&tilt<25&&gest.turn<55&&gest.side>=gest.along*1.2){send({t:"skip",f});buzz([20,60,20]);mute=now+750;}
+          else if(ps==="pre")send({t:"g",f,tr:trace(gest.t)});
+          gest=null;}}
     }
   }
   $("cGo").addEventListener("click",async()=>{
@@ -2834,7 +2861,7 @@ if(PHONE&&code){
     const peer=new Peer();
     peer.on("open",()=>{c=peer.connect("pocketreads-"+code);
       c.on("open",()=>{ready=true;$("ctl").classList.add("locked");$("cPlay").hidden=false;playHelp();});
-      c.on("data",m=>{if(m&&m.t==="s"){ps=m.s==="live"||m.s==="flight"?"live":m.s==="pre"?"pre":m.s==="cal"?"cal":"done";pump=null;jerk=null;playHelp();}});
+      c.on("data",m=>{if(m&&m.t==="s"){ps=m.s==="live"||m.s==="flight"?"live":m.s==="pre"?"pre":m.s==="cal"?"cal":"done";pump=null;gest=null;playHelp();}});
       c.on("close",()=>{ready=false;$("ctl").classList.remove("locked");say("Disconnected","Scan the code on the TV again.");});});
     peer.on("error",e=>say("Could not connect","Check that the game is still open on the TV, then scan again. ("+(e.type||"")+")"));
   });
